@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+
+import '../../models/models.dart';
+import '../../state/app_state.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
+
+class CallEndedScreen extends StatefulWidget {
+  final SpeekUser user;
+  const CallEndedScreen({super.key, required this.user});
+
+  @override
+  State<CallEndedScreen> createState() => _CallEndedScreenState();
+}
+
+class _CallEndedScreenState extends State<CallEndedScreen> {
+  int _rating = 5;
+  late final int _xpEarned;
+  static const _minutes = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    // The call just finished — drive XP, streak and badge progress.
+    _xpEarned = AppState.instance
+        .recordCall(country: widget.user.country, minutes: _minutes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final u = widget.user;
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.7),
+            radius: 1.1,
+            colors: [Color(0xFF1A1A2E), Color(0xFF0A0A0F)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            const BrandGlow(opacity: 0.5),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Insets.x6),
+                child: Column(
+                  children: [
+                    const Spacer(flex: 2),
+                    Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3), width: 2),
+                      ),
+                      child: Avatar(u.photoUrl, size: 84),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Call ended', style: AppText.h2),
+                    const SizedBox(height: 4),
+                    Text.rich(
+                      TextSpan(
+                        style: AppText.smMuted,
+                        children: [
+                          TextSpan(text: 'You spoke with ${u.name} for '),
+                          TextSpan(
+                              text: '$_minutes min 12 s',
+                              style: AppText.smMuted.copyWith(
+                                  color: AppColors.brand300,
+                                  fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.brand500.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                            color: AppColors.brand500.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                          '🎉 +$_xpEarned XP earned · 🔥 ${AppState.instance.streakDays}-day streak',
+                          textAlign: TextAlign.center,
+                          style: AppText.label
+                              .copyWith(color: AppColors.brand200)),
+                    ),
+                    const SizedBox(height: 24),
+                    Text('How was your conversation?', style: AppText.h3),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (int i = 1; i <= 5; i++)
+                          GestureDetector(
+                            onTap: () => setState(() => _rating = i),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: Icon(
+                                i <= _rating
+                                    ? Icons.star_rounded
+                                    : Icons.star_outline_rounded,
+                                color: AppColors.gold,
+                                size: 38,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const Spacer(flex: 3),
+                    PrimaryButton('💜 Add ${u.name} as friend',
+                        onTap: () => Navigator.of(context).pop()),
+                    const SizedBox(height: 12),
+                    GhostButton('Back to map',
+                        onTap: () => Navigator.of(context).pop()),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
