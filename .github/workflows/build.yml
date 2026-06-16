@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Flutter Release APK
@@ -42,12 +45,40 @@ jobs:
             echo "storeFile=release.jks"
           } > android/key.properties
 
-      - name: Build release APK
-        run: flutter build apk --release --split-per-abi
+      - name: Get version from pubspec
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          BUILD=$(echo $GITHUB_RUN_NUMBER)
+          echo "name=v${VERSION}-build${BUILD}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APKs
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/speek.apk
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: speek-apk-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/speek.apk
           retention-days: 30
+
+      - name: Delete existing latest release
+        run: gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build (${{ steps.version.outputs.name }})"
+          body: |
+            Oxirgi build: `${{ steps.version.outputs.name }}`
+            Commit: ${{ github.sha }}
+          files: build/app/outputs/flutter-apk/speek.apk
+          make_latest: true
