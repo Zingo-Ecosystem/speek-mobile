@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -51,16 +52,24 @@ class CallService {
   }
 
   Future<void> _connectMedia(CallData call, {required bool video}) async {
-    if (call.mediaServerUrl.isEmpty || call.mediaToken.isEmpty) return;
+    debugPrint('[CallService] _connectMedia url=${call.mediaServerUrl} token=${call.mediaToken.isNotEmpty ? "present" : "EMPTY"}');
+    if (call.mediaServerUrl.isEmpty || call.mediaToken.isEmpty) {
+      debugPrint('[CallService] _connectMedia aborted: url or token empty');
+      return;
+    }
     try {
-      await [Permission.microphone, if (video) Permission.camera].request();
+      final statuses = await [Permission.microphone, if (video) Permission.camera].request();
+      debugPrint('[CallService] permissions: $statuses');
       final room = Room();
       await room.connect(call.mediaServerUrl, call.mediaToken);
+      debugPrint('[CallService] LiveKit connected, localParticipant=${room.localParticipant?.identity}');
       await room.localParticipant?.setMicrophoneEnabled(true);
+      debugPrint('[CallService] mic enabled');
       if (video) await room.localParticipant?.setCameraEnabled(true);
       _room = room;
-    } catch (_) {
-      _room = null; // signaling-only fallback
+    } catch (e, st) {
+      debugPrint('[CallService] _connectMedia error: $e\n$st');
+      _room = null;
     }
   }
 
@@ -74,6 +83,17 @@ class CallService {
     try {
       await _room?.localParticipant?.setCameraEnabled(enabled);
     } catch (_) {}
+  }
+
+  /// Cancels an outgoing call before the callee answers.
+  Future<void> cancel() async {
+    final id = _active?.id;
+    await _teardown();
+    if (id != null) {
+      try {
+        await Repos.calls.cancel(id);
+      } catch (_) {}
+    }
   }
 
   /// Ends the call on the backend and disconnects media.
@@ -95,9 +115,16 @@ class CallService {
   }
 
   Future<void> _teardown() async {
-    try {
-      await _room?.disconnect();
-    } catch (_) {}
+    final lp = _room?.localParticipant;
+    if (lp != null) {
+      for (final pub in lp.audioTrackPublications) {
+        try { await pub.track?.stop(); } catch (_) {}
+      }
+      for (final pub in lp.videoTrackPublications) {
+        try { await pub.track?.stop(); } catch (_) {}
+      }
+    }
+    try { await _room?.disconnect(); } catch (_) {}
     _room = null;
     _active = null;
   }

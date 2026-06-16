@@ -64,6 +64,9 @@ class _MapScreenState extends State<MapScreen> {
       // Pull a wide radius so the map reflects real online speakers worldwide.
       final users = await Repos.map
           .nearby(lat: at.latitude, lng: at.longitude, radiusKm: 20000, limit: 200);
+
+      debugPrint('nearby users: ${users.map((e) => '${e.lat} ${e.lng}').first}');
+      
       if (!mounted) return;
       // Once authenticated we always show real data (even if it's just a few),
       // never the demo users.
@@ -72,13 +75,17 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _startHeartbeat(LatLng at) {
+    debugPrint('[Heartbeat] isAuthenticated=${Session.instance.isAuthenticated}');
     if (!Session.instance.isAuthenticated) return;
-    Repos.map.heartbeat(at.latitude, at.longitude).catchError((_) {});
+    Repos.map.heartbeat(at.latitude, at.longitude)
+        .then((_) => debugPrint('[Heartbeat] sent ${at.latitude},${at.longitude}'))
+        .catchError((e) => debugPrint('[Heartbeat] error: $e'));
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
       final loc = _myLocation ?? _start;
-      Repos.map.heartbeat(loc.latitude, loc.longitude).catchError((_) {});
-      // Keep "online / talking" markers fresh.
+      Repos.map.heartbeat(loc.latitude, loc.longitude)
+          .then((_) => debugPrint('[Heartbeat] tick sent ${loc.latitude},${loc.longitude}'))
+          .catchError((e) => debugPrint('[Heartbeat] tick error: $e'));
       _refreshNearby(loc);
     });
   }

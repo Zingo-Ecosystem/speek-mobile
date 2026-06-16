@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/dto.dart';
 import '../../data/repositories.dart';
 import '../../models/models.dart';
+import '../../realtime/realtime_service.dart';
 import '../../services/call_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -24,6 +27,26 @@ class IncomingRingScreen extends StatefulWidget {
 
 class _IncomingRingScreenState extends State<IncomingRingScreen> {
   bool _busy = false;
+  StreamSubscription? _stateSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final myCallId = widget.call.id;
+    if (myCallId.isEmpty) return; // ID kelmasa, noto'g'ri yopilishdan himoya
+    _stateSub = RealtimeService.instance.onCallState.listen((c) {
+      debugPrint('[IncomingRingScreen] callState id=${c.id} status=${c.status} myId=$myCallId');
+      if (c.id == myCallId && c.status >= 3 && mounted) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _stateSub?.cancel();
+    super.dispose();
+  }
 
   SpeekUser get _user =>
       widget.caller ??
@@ -41,24 +64,29 @@ class _IncomingRingScreenState extends State<IncomingRingScreen> {
   Future<void> _accept() async {
     if (_busy) return;
     setState(() => _busy = true);
+    _stateSub?.cancel(); // accept jarayonida callState pop qilmasligi uchun
+    CallData call = widget.call;
     try {
-      await Repos.calls.accept(widget.call.id);
-    } catch (_) {}
-    await CallService.instance.connect(widget.call, video: widget.call.isVideo);
+      call = await Repos.calls.accept(widget.call.id);
+      debugPrint('[IncomingRingScreen] accept ok, callId=${call.id}');
+    } catch (e) {
+      debugPrint('[IncomingRingScreen] accept error: $e');
+    }
+    debugPrint('[IncomingRingScreen] mounted=$mounted');
     if (!mounted) return;
+    debugPrint('[IncomingRingScreen] navigating to call screen');
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => widget.call.isVideo
-          ? VideoCallScreen(user: _user)
-          : VoiceCallScreen(user: _user),
+          ? VideoCallScreen(user: _user, callData: call)
+          : VoiceCallScreen(user: _user, callData: call),
     ));
   }
 
   Future<void> _decline() async {
     if (_busy) return;
     setState(() => _busy = true);
-    try {
-      await Repos.calls.decline(widget.call.id);
-    } catch (_) {}
+    _stateSub?.cancel();
+    await CallService.instance.decline(widget.call.id);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -191,7 +219,7 @@ class _PulseAvatarState extends State<_PulseAvatar>
         children: [
           AnimatedBuilder(
             animation: _c,
-            builder: (_, __) => Container(
+            builder: (_, _) => Container(
               width: 128 + _c.value * 60,
               height: 128 + _c.value * 60,
               decoration: BoxDecoration(

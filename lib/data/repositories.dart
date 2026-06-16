@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
+
 import '../core/api_client.dart';
+import '../core/api_exception.dart';
 import '../models/models.dart';
 import 'api_enums.dart';
 import 'dto.dart';
@@ -58,7 +61,8 @@ class ProfileRepository {
   /// Uploads an image file and returns its hosted URL.
   Future<String> uploadImage(String filePath) async {
     final j = await _api.uploadFile('/Upload', filePath);
-    return ((j as Map)['url'] ?? '').toString();
+    if (j is! Map) throw ApiException(0, 'Unexpected upload response.');
+    return (j['url'] ?? '').toString();
   }
 
   /// Sets the uploaded URL as the user's primary avatar.
@@ -137,6 +141,12 @@ class ChatRepository {
 
   Future<void> markRead(String conversationId) =>
       _api.post('/Chat/conversations/$conversationId/read');
+
+  Future<void> accept(String conversationId) =>
+      _api.post('/Chat/conversations/$conversationId/accept');
+
+  Future<void> decline(String conversationId) =>
+      _api.post('/Chat/conversations/$conversationId/decline');
 }
 
 // ---------------------------------------------------------------------------
@@ -150,10 +160,15 @@ class CallRepository {
       'calleeId': calleeId,
       'type': video ? 1 : 0,
     });
+    debugPrint('[CallRepository.start] response: $j');
     return CallData.fromJson((j as Map).cast());
   }
 
-  Future<void> accept(String id) => _api.post('/Calls/$id/accept');
+  Future<CallData> accept(String id) async {
+    final j = await _api.post('/Calls/$id/accept');
+    debugPrint('[CallRepository.accept] response: $j');
+    return CallData.fromJson((j as Map).cast());
+  }
   Future<void> decline(String id) => _api.post('/Calls/$id/decline');
   Future<void> cancel(String id) => _api.post('/Calls/$id/cancel');
   Future<void> end(String id) => _api.post('/Calls/$id/end');

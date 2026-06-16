@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 
 import '../config/app_config.dart';
@@ -49,8 +50,14 @@ class RealtimeService {
           .build();
 
       hub.on('message', (a) => _emit(a, _messages, Message.fromJson));
-      hub.on('incomingCall', (a) => _emit(a, _incomingCalls, CallData.fromJson));
-      hub.on('callState', (a) => _emit(a, _callStates, CallData.fromJson));
+      hub.on('incomingCall', (a) {
+        debugPrint('[RealtimeService] incomingCall raw: $a');
+        _emit(a, _incomingCalls, CallData.fromJson);
+      });
+      hub.on('callState', (a) {
+        debugPrint('[RealtimeService] callState raw: $a');
+        _emit(a, _callStates, CallData.fromJson);
+      });
       hub.on('notification', (a) => _emit(a, _notifications, AppNotification.fromJson));
       hub.on('typing', (a) {
         final m = _first(a);
@@ -62,10 +69,15 @@ class RealtimeService {
         }
       });
 
+      hub.onclose(({Exception? error}) => debugPrint('[RealtimeService] connection closed: $error'));
+      hub.onreconnecting(({Exception? error}) => debugPrint('[RealtimeService] reconnecting: $error'));
+      hub.onreconnected(({String? connectionId}) => debugPrint('[RealtimeService] reconnected id=$connectionId'));
+
       _hub = hub;
       await hub.start();
-    } catch (_) {
-      // Realtime is best-effort; REST still works without it.
+      debugPrint('[RealtimeService] connected to ${AppConfig.realtimeHubUrl}');
+    } catch (e, st) {
+      debugPrint('[RealtimeService] connect failed: $e\n$st');
     } finally {
       _starting = false;
     }

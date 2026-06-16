@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
@@ -12,9 +13,13 @@ import 'session.dart';
 /// - Attaches the bearer token from [Session] automatically.
 /// - Decodes JSON and turns non-2xx responses into [ApiException]s, parsing the
 ///   backend's `{ "error": ..., "code": ... }` envelope when present.
+/// - On 401 clears the session and calls [onUnauthenticated] if set.
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
+
+  /// Set once in main.dart to navigate to the login screen on 401.
+  static void Function()? onUnauthenticated;
 
   final http.Client _http = http.Client();
 
@@ -78,9 +83,22 @@ class ApiClient {
       throw ApiException(0, 'Network error. Check your connection.', code: 'network');
     }
 
+    final contentType = res.headers['content-type'] ?? '';
     final body = res.body.isEmpty ? null : _tryDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) {
+      // A 2xx with HTML body almost always means an auth redirect was followed.
+      if (contentType.contains('text/html')) {
+        await Session.instance.clear();
+        ApiClient.onUnauthenticated?.call();
+        throw ApiException(401, 'Session expired. Please log in again.');
+      }
       return body;
+    }
+
+    if (res.statusCode == 401) {
+      await Session.instance.clear();
+      debugPrint('[ApiClient] onUnauthenticated = ${ApiClient.onUnauthenticated}');
+      ApiClient.onUnauthenticated?.call();
     }
 
     String message = 'Request failed (${res.statusCode})';

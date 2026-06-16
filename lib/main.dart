@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/api_client.dart';
 import 'core/session.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'services/call_manager.dart';
@@ -13,8 +14,14 @@ void main() {
   // Restore any persisted session early so the splash can route correctly.
   Session.instance.load();
   PurchaseService.instance.init();
-  // Ring the user on inbound calls from any screen.
   CallManager.instance.start();
+  ApiClient.onUnauthenticated = () {
+    debugPrint("Calling event");
+    CallManager.instance.navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SplashScreen()),
+      (_) => false,
+    );
+  };
   runApp(const SpeekApp());
 }
 

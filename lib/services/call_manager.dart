@@ -25,23 +25,36 @@ class CallManager {
 
   Future<void> _onIncoming(CallData call) async {
     final nav = navigatorKey.currentState;
-    // Already ringing or already in a call → auto-decline so the caller gets a
-    // clean "busy" instead of a second ring stacking up.
-    if (nav == null || _ringing || CallService.instance.isInCall) {
+    if (nav == null) {
+      debugPrint('[CallManager] nav is null — declining ${call.id}');
       Repos.calls.decline(call.id).catchError((_) {});
       return;
     }
-    _ringing = true;
+    if (_ringing) {
+      debugPrint('[CallManager] already ringing — declining ${call.id}');
+      Repos.calls.decline(call.id).catchError((_) {});
+      return;
+    }
+    if (CallService.instance.isInCall) {
+      debugPrint('[CallManager] already in call — declining ${call.id}');
+      Repos.calls.decline(call.id).catchError((_) {});
+      return;
+    }
 
-    // Best-effort: enrich the ring screen with the caller's profile.
+    _ringing = true;
+    debugPrint('[CallManager] showing IncomingRingScreen for call ${call.id}');
+
     SpeekUser? caller;
     try {
       caller = await Repos.profile.byId(call.callerId);
     } catch (_) {}
 
-    await nav.push(MaterialPageRoute(
-      builder: (_) => IncomingRingScreen(call: call, caller: caller),
-    ));
-    _ringing = false;
+    try {
+      await nav.push(MaterialPageRoute(
+        builder: (_) => IncomingRingScreen(call: call, caller: caller),
+      ));
+    } finally {
+      _ringing = false;
+    }
   }
 }

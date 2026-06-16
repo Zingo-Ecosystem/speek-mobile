@@ -89,11 +89,12 @@ class _UserPreviewSheet extends StatelessWidget {
   const _UserPreviewSheet({required this.user});
 
   void _call(BuildContext context) {
-    Navigator.of(context).pop();
+    final nav = Navigator.of(context);
+    nav.pop();
     if (!AppState.instance.isRegistered) {
       showRegisterGate(context, user);
     } else {
-      Navigator.of(context).push(MaterialPageRoute(
+      nav.push(MaterialPageRoute(
           builder: (_) => IncomingCallScreen(user: user)));
     }
   }

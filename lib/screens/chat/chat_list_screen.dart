@@ -81,7 +81,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             if (requests.isNotEmpty) ...[
               _requestsHeader(requests.length),
               const SizedBox(height: 10),
-              for (final r in requests) _RequestCard(chat: r),
+              for (final r in requests) _RequestCard(chat: r, onDone: _load),
               const SizedBox(height: 20),
             ],
             Text('MESSAGES',
@@ -158,9 +158,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
       );
 }
 
-class _RequestCard extends StatelessWidget {
+class _RequestCard extends StatefulWidget {
   final Chat chat;
-  const _RequestCard({required this.chat});
+  final VoidCallback onDone;
+  const _RequestCard({required this.chat, required this.onDone});
+  @override
+  State<_RequestCard> createState() => _RequestCardState();
+}
+
+class _RequestCardState extends State<_RequestCard> {
+  bool _busy = false;
+
+  Future<void> _accept() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await Repos.chat.accept(widget.chat.id);
+      widget.onDone();
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _decline() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await Repos.chat.decline(widget.chat.id);
+      widget.onDone();
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -172,16 +202,16 @@ class _RequestCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Avatar(chat.user.photoUrl, size: 46, name: chat.user.name),
+          Avatar(widget.chat.user.photoUrl, size: 46, name: widget.chat.user.name),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${chat.user.name} ${chat.user.flag}',
+                Text('${widget.chat.user.name} ${widget.chat.user.flag}',
                     style: AppText.label),
                 const SizedBox(height: 2),
-                Text(chat.preview,
+                Text(widget.chat.preview,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.smMuted),
@@ -189,21 +219,41 @@ class _RequestCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _reqBtn(Icons.check, AppColors.success, const Color(0xFF062206)),
-          const SizedBox(width: 6),
-          _reqBtn(Icons.close, Colors.white.withValues(alpha: 0.08),
-              AppColors.n200),
+          if (_busy)
+            const SizedBox(
+              width: 34,
+              height: 34,
+              child: Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.brand400),
+                ),
+              ),
+            )
+          else ...[
+            _reqBtn(Icons.check, AppColors.success, const Color(0xFF062206),
+                _accept),
+            const SizedBox(width: 6),
+            _reqBtn(Icons.close, Colors.white.withValues(alpha: 0.08),
+                AppColors.n200, _decline),
+          ],
         ],
       ),
     );
   }
 
-  Widget _reqBtn(IconData icon, Color bg, Color fg) => Container(
-        width: 34,
-        height: 34,
-        decoration:
-            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11)),
-        child: Icon(icon, size: 16, color: fg),
+  Widget _reqBtn(IconData icon, Color bg, Color fg, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration:
+              BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11)),
+          child: Icon(icon, size: 16, color: fg),
+        ),
       );
 }
 

@@ -9,7 +9,8 @@ import '../../widgets/common.dart';
 
 class CallEndedScreen extends StatefulWidget {
   final SpeekUser user;
-  const CallEndedScreen({super.key, required this.user});
+  final Duration duration;
+  const CallEndedScreen({super.key, required this.user, this.duration = Duration.zero});
 
   @override
   State<CallEndedScreen> createState() => _CallEndedScreenState();
@@ -17,15 +18,28 @@ class CallEndedScreen extends StatefulWidget {
 
 class _CallEndedScreenState extends State<CallEndedScreen> {
   int _rating = 5;
-  late final int _xpEarned;
-  static const _minutes = 8;
+  int _xpEarned = 0;
+
+  String get _durationText {
+    final s = widget.duration.inSeconds;
+    final m = s ~/ 60;
+    final sec = s % 60;
+    return m > 0 ? '$m min ${sec.toString().padLeft(2, '0')} s' : '$s s';
+  }
 
   @override
   void initState() {
     super.initState();
-    // The call just finished — drive XP, streak and badge progress.
-    _xpEarned = AppState.instance
-        .recordCall(country: widget.user.country, minutes: _minutes);
+    _xpEarned = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _xpEarned = AppState.instance.recordCall(
+          country: widget.user.country,
+          minutes: widget.duration.inMinutes,
+        );
+      });
+    });
   }
 
   @override
@@ -66,7 +80,7 @@ class _CallEndedScreenState extends State<CallEndedScreen> {
                         children: [
                           TextSpan(text: 'You spoke with ${u.name} for '),
                           TextSpan(
-                              text: '$_minutes min 12 s',
+                              text: _durationText,
                               style: AppText.smMuted.copyWith(
                                   color: AppColors.brand300,
                                   fontWeight: FontWeight.w700)),
