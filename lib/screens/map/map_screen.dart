@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
+import '../../core/session.dart';
 import '../../data/mock_data.dart';
+import '../../data/repositories.dart';
 import '../../models/models.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -24,10 +28,75 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final _map = MapController();
-  static const _start = LatLng(30, 0); // world-ish center
-  double _zoom = 2.4;
+  static const _start = LatLng(25, 0); // world-ish center
+  double _zoom = 3.2;
   LatLng? _myLocation;
   bool _locating = false;
+  bool _needsLocation = false; // show the "enable location" prompt
+
+  // Live data: starts with mock so the map looks alive, replaced by /Map/nearby.
+  List<SpeekUser> _users = List.of(Mock.mapUsers);
+  Timer? _heartbeat;
+
+  @override
+  void initState() {
+    super.initState();
+    // Authenticated users see real data immediately (worldwide), then we refine
+    // around their location once we have it. Guests keep the demo map.
+    if (Session.instance.isAuthenticated) {
+      _users = const [];
+      _refreshNearby(_start);
+    }
+    // Proactively triggers the OS "Allow location" dialog on entering the map,
+    // but stays quiet (no error toasts) if the user declines.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _locateMe(silent: true));
+  }
+
+  @override
+  void dispose() {
+    _heartbeat?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshNearby(LatLng at) async {
+    if (!Session.instance.isAuthenticated) return;
+    try {
+      // Pull a wide radius so the map reflects real online speakers worldwide.
+      final users = await Repos.map
+          .nearby(lat: at.latitude, lng: at.longitude, radiusKm: 20000, limit: 200);
+      if (!mounted) return;
+      // Once authenticated we always show real data (even if it's just a few),
+      // never the demo users.
+      setState(() => _users = users);
+    } catch (_) {}
+  }
+
+  void _startHeartbeat(LatLng at) {
+    if (!Session.instance.isAuthenticated) return;
+    Repos.map.heartbeat(at.latitude, at.longitude).catchError((_) {});
+    _heartbeat?.cancel();
+    _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
+      final loc = _myLocation ?? _start;
+      Repos.map.heartbeat(loc.latitude, loc.longitude).catchError((_) {});
+      // Keep "online / talking" markers fresh.
+      _refreshNearby(loc);
+    });
+  }
+
+  /// Called from the in-app "Enable location" banner. Re-requests permission,
+  /// or sends the user to Settings if they previously blocked it for good.
+  Future<void> _enableLocation() async {
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+      return;
+    }
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      await Geolocator.openLocationSettings();
+      return;
+    }
+    await _locateMe();
+  }
 
   void _zoomBy(double delta) {
     final z = (_zoom + delta).clamp(1.5, 18.0);
@@ -35,27 +104,40 @@ class _MapScreenState extends State<MapScreen> {
     _map.move(_map.camera.center, z);
   }
 
-  Future<void> _locateMe() async {
+  Future<void> _locateMe({bool silent = false}) async {
     if (_locating) return;
     setState(() => _locating = true);
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        _toast('Turn on location services to find people near you.',
-            type: SnackType.error);
-        return;
-      }
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
+        // This shows the OS "Allow location" dialog.
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        _toast('Location permission denied.', type: SnackType.error);
+        if (mounted) setState(() => _needsLocation = true);
+        if (!silent) {
+          _toast('Allow location access to find people near you.',
+              type: SnackType.error);
+        }
         return;
       }
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (mounted) setState(() => _needsLocation = true);
+        if (!silent) {
+          _toast('Turn on location services to find people near you.',
+              type: SnackType.error);
+        }
+        return;
+      }
+      if (mounted) setState(() => _needsLocation = false);
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+        locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 15)),
+      ).timeout(const Duration(seconds: 18),
+          onTimeout: () => Geolocator.getLastKnownPosition().then(
+              (p) => p ?? (throw Exception('timeout'))));
       final here = LatLng(pos.latitude, pos.longitude);
       if (!mounted) return;
       setState(() {
@@ -63,8 +145,10 @@ class _MapScreenState extends State<MapScreen> {
         _zoom = 14;
       });
       _map.move(here, 14);
+      _startHeartbeat(here);
+      _refreshNearby(here);
     } catch (e) {
-      _toast('Could not get your location.', type: SnackType.error);
+      if (!silent) _toast('Could not get your location.', type: SnackType.error);
     } finally {
       if (mounted) setState(() => _locating = false);
     }
@@ -78,7 +162,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
-    final onlineCount = Mock.mapUsers.where((u) => u.online).length;
+    final onlineCount = _users.where((u) => u.online).length;
 
     return Scaffold(
       body: Stack(
@@ -88,9 +172,17 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _start,
               initialZoom: _zoom,
-              minZoom: 1.5,
+              minZoom: 2.8,
               maxZoom: 18,
               backgroundColor: AppColors.n900,
+              // Keep the camera inside the world so panning never reveals the
+              // empty (dark) area beyond the map edges.
+              cameraConstraint: CameraConstraint.contain(
+                bounds: LatLngBounds(
+                  const LatLng(-85, -180),
+                  const LatLng(85, 180),
+                ),
+              ),
               onPositionChanged: (pos, _) => _zoom = pos.zoom,
               interactionOptions: const InteractionOptions(
                 // Explicit gestures: one-finger drag, two-finger pinch zoom &
@@ -115,10 +207,21 @@ class _MapScreenState extends State<MapScreen> {
                 retinaMode: RetinaMode.isHighDensity(context),
                 userAgentPackageName: 'com.speek.app',
                 tileProvider: NetworkTileProvider(),
+                // Lift the very dark CARTO tiles a touch so the map reads as a
+                // softer dark mode instead of near-black.
+                tileBuilder: (context, tileWidget, tile) => ColorFiltered(
+                  colorFilter: const ColorFilter.matrix(<double>[
+                    1.18, 0, 0, 0, 22, //
+                    0, 1.18, 0, 0, 22, //
+                    0, 0, 1.18, 0, 26, //
+                    0, 0, 0, 1, 0, //
+                  ]),
+                  child: tileWidget,
+                ),
               ),
               MarkerLayer(
                 markers: [
-                  for (final u in Mock.mapUsers)
+                  for (final u in _users)
                     Marker(
                       point: LatLng(u.lat, u.lng),
                       width: 54,
@@ -180,12 +283,62 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Online count pill
+          // Online count pill — short text, left-aligned and lifted above the
+          // bottom nav so it never sits under the center Map button.
           Positioned(
             left: Insets.x4,
-            bottom: 110,
-            child: Pill('🌐 $onlineCount speakers online now'),
+            bottom: 100 + MediaQuery.of(context).padding.bottom,
+            child: Pill('🌐 $onlineCount online'),
           ),
+
+          // Location-required prompt — shown until the user enables location.
+          if (_needsLocation)
+            Positioned(
+              left: Insets.x4,
+              right: Insets.x4,
+              bottom: 150 + MediaQuery.of(context).padding.bottom,
+              child: GestureDetector(
+                onTap: _enableLocation,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.grad,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.brand500.withValues(alpha: 0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.location_on_rounded,
+                          color: Colors.white, size: 22),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Enable location',
+                                style: AppText.label
+                                    .copyWith(color: Colors.white)),
+                            const SizedBox(height: 2),
+                            Text('So people can find you on the map',
+                                style: AppText.caption.copyWith(
+                                    color: Colors.white
+                                        .withValues(alpha: 0.85),
+                                    fontSize: 11.5)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, color: Colors.white),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -237,28 +390,53 @@ class _UserMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ringColor =
-        user.online ? AppColors.brand500 : Colors.white.withValues(alpha: 0.4);
+    // In a call → green ring + phone badge (stays visible, not removed).
+    final ringColor = user.inCall
+        ? AppColors.success
+        : user.online
+            ? AppColors.brand500
+            : Colors.white.withValues(alpha: 0.4);
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.n800,
-              border: Border.all(color: ringColor, width: 2),
-              boxShadow: [
-                if (user.online)
-                  BoxShadow(
-                      color: AppColors.brand500.withValues(alpha: 0.5),
-                      blurRadius: 12),
-              ],
-            ),
-            child: Avatar(user.photoUrl, size: 40, online: user.online),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.n800,
+                  border: Border.all(color: ringColor, width: 2),
+                  boxShadow: [
+                    if (user.online)
+                      BoxShadow(
+                          color: ringColor.withValues(alpha: 0.5),
+                          blurRadius: 12),
+                  ],
+                ),
+                child: Avatar(user.photoUrl,
+                    size: 40, online: user.online && !user.inCall, name: user.name),
+              ),
+              if (user.inCall)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.n900, width: 2),
+                    ),
+                    child: const Icon(Icons.call, size: 9, color: Colors.white),
+                  ),
+                ),
+            ],
           ),
           // pointer
           Transform.translate(

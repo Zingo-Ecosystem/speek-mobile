@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../core/session.dart';
 import '../../models/models.dart';
+import '../../services/call_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/common.dart';
+import '../../widgets/snack.dart';
 import 'call_controls.dart';
 import 'video_call_screen.dart';
 import 'voice_call_screen.dart';
 
+/// Outgoing call screen (the caller). Starts the call on the backend and, once
+/// it succeeds, opens the live voice/video screen. Surfaces busy/offline.
 class IncomingCallScreen extends StatelessWidget {
   final SpeekUser user;
   const IncomingCallScreen({super.key, required this.user});
@@ -71,11 +76,27 @@ class IncomingCallScreen extends StatelessWidget {
     );
   }
 
-  void _go(BuildContext context, {required bool video}) {
+  Future<void> _go(BuildContext context, {required bool video}) async {
+    if (!Session.instance.isAuthenticated) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) =>
+            video ? VideoCallScreen(user: user) : VoiceCallScreen(user: user),
+      ));
+      return;
+    }
+    // Start the call on the backend (signs a LiveKit token, rings the callee).
+    final res =
+        await CallService.instance.startOutgoing(calleeId: user.id, video: video);
+    if (!context.mounted) return;
+    if (res.error != null) {
+      // Busy / offline / failed — tell the caller and go back.
+      showSnack(context, res.error!, type: SnackType.error);
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => video
-          ? VideoCallScreen(user: user)
-          : VoiceCallScreen(user: user),
+      builder: (_) =>
+          video ? VideoCallScreen(user: user) : VoiceCallScreen(user: user),
     ));
   }
 }

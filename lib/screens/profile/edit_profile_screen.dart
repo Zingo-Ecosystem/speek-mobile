@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../../data/mock_data.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/snack.dart';
@@ -41,7 +41,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  void _save() {
+  bool _uploadingPhoto = false;
+
+  Future<void> _pickPhoto() async {
+    if (_uploadingPhoto) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1080,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      setState(() => _uploadingPhoto = true);
+      final err = await _s.updatePhoto(picked.path);
+      if (!mounted) return;
+      setState(() => _uploadingPhoto = false);
+      showSnack(context, err ?? 'Photo updated',
+          type: err == null ? SnackType.success : SnackType.error);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _uploadingPhoto = false);
+        showSnack(context, 'Could not pick image', type: SnackType.error);
+      }
+    }
+  }
+
+  Future<void> _save() async {
     _s.saveProfile(
       name: _name.text.trim().isEmpty ? _s.name : _name.text.trim(),
       age: int.tryParse(_age.text.trim()) ?? _s.age,
@@ -88,29 +113,49 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   Insets.x5, 0, Insets.x5, Insets.x8),
               children: [
                 Center(
-                  child: Stack(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: AppColors.brand500, width: 2),
+                  child: GestureDetector(
+                    onTap: _pickPhoto,
+                    child: Stack(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: AppColors.brand500, width: 2),
+                          ),
+                          child: Avatar(_s.photoUrl, size: 96, name: _s.name),
                         ),
-                        child: Avatar(Mock.me.photoUrl, size: 96),
-                      ),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                              gradient: AppColors.grad,
-                              shape: BoxShape.circle),
-                          child: const Icon(Icons.camera_alt,
-                              size: 16, color: Colors.white),
+                        if (_uploadingPhoto)
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.black.withValues(alpha: 0.45),
+                              ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.5, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                                gradient: AppColors.grad,
+                                shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt,
+                                size: 16, color: Colors.white),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),

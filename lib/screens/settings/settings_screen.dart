@@ -5,6 +5,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../onboarding/onboarding_screen.dart';
 import '../profile/edit_profile_screen.dart';
 import '../subscription/manage_subscription_screen.dart';
 import '../subscription/paywall_screen.dart';
@@ -91,8 +92,16 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Insets.x5),
-                child: GhostButton('Log out',
-                    onTap: () => Navigator.of(context).pop()),
+                child: GhostButton('Log out', onTap: () async {
+                  await AppState.instance.logout();
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                          builder: (_) => const OnboardingScreen()),
+                      (_) => false,
+                    );
+                  }
+                }),
               ),
               const SizedBox(height: 14),
               Center(

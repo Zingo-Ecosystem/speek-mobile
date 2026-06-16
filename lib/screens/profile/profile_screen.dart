@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../data/mock_data.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
@@ -31,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
 
   Widget _build(BuildContext context) {
     final s = AppState.instance;
-    final me = Mock.me;
+    final coverUrl = s.photoUrl;
     final flag = s.country.split(' ').first;
     final roleLine = s.isLearner
         ? 'Learner · ${s.city} · ${s.level} → fluent goal'
@@ -54,7 +53,10 @@ class ProfileScreen extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(me.photoUrl, fit: BoxFit.cover),
+                coverUrl.isNotEmpty
+                    ? Image.network(coverUrl, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const _CoverGradient())
+                    : const _CoverGradient(),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -94,38 +96,27 @@ class ProfileScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  // Full-width name (wraps instead of clipping), then status
+                  // chips on their own line so nothing gets cut off.
+                  Text('${s.name}, ${s.age}  $flag',
+                      style: AppText.displayMd.copyWith(fontSize: 23, height: 1.1),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text('${s.name}, ${s.age}  $flag',
-                                      style: AppText.displayMd
-                                          .copyWith(fontSize: 25),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                                if (s.isPremium) ...[
-                                  const SizedBox(width: 8),
-                                  const PremiumChip(small: true),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(roleLine, style: AppText.smMuted),
-                          ],
-                        ),
-                      ),
+                      if (s.isPremium) const PremiumChip(small: true),
                       Pill('● Online',
                           bg: AppColors.success.withValues(alpha: 0.15),
                           fg: AppColors.success,
                           border: AppColors.success.withValues(alpha: 0.4)),
                     ],
                   ),
+                  const SizedBox(height: 6),
+                  Text(roleLine, style: AppText.smMuted),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -275,6 +266,26 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Branded cover used when the user hasn't uploaded a photo yet.
+class _CoverGradient extends StatelessWidget {
+  const _CoverGradient();
+  @override
+  Widget build(BuildContext context) {
+    final s = AppState.instance;
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF241F4D), Color(0xFF0F0E1A)],
+        ),
+      ),
+      alignment: const Alignment(0, -0.15),
+      child: Avatar('', size: 96, name: s.name),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/auth_buttons.dart';
 import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
+import '../shell.dart';
 import 'create_account_screen.dart';
 
 class SignupScreen extends StatelessWidget {
@@ -34,10 +35,16 @@ class SignupScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       AuthButtons(
-                        onAuth: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const CreateAccountScreen()),
-                        ),
+                        onAuthenticated: (needsOnboarding) {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => needsOnboarding
+                                  ? const CreateAccountScreen()
+                                  : const ShellScreen(initialIndex: 1),
+                            ),
+                            (_) => false,
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
                       const LegalNote(),

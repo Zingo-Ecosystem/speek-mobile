@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../data/api_enums.dart';
+
 /// Whether a person is a native speaker or a learner.
 enum SpeakerRole { native, learner }
 
@@ -23,6 +25,9 @@ class SpeekUser {
   // Real-world position for the map.
   final double lat;
   final double lng;
+  final bool isOnboarded;
+  final bool inCall;
+  final DateTime? callStartedAt;
 
   const SpeekUser({
     required this.id,
@@ -42,9 +47,51 @@ class SpeekUser {
     this.distanceKm = 0,
     this.lat = 0,
     this.lng = 0,
+    this.isOnboarded = true,
+    this.inCall = false,
+    this.callStartedAt,
   });
 
   String get roleLabel => role == SpeakerRole.native ? 'Native' : 'Learner';
+
+  /// Maps a backend `UserDto` (see Speek.Application.Contracts) to a [SpeekUser].
+  factory SpeekUser.fromJson(Map<String, dynamic> j) {
+    String s(String key, [String fallback = '']) =>
+        (j[key] ?? fallback).toString();
+    double d(String key) => (j[key] is num) ? (j[key] as num).toDouble() : 0;
+    int i(String key, [int fallback = 0]) =>
+        (j[key] is num) ? (j[key] as num).toInt() : fallback;
+
+    final photos = (j['photos'] as List?)?.map((e) => '$e').toList() ?? const [];
+    final interests =
+        (j['interests'] as List?)?.map((e) => '$e').toList() ?? const [];
+    final photo = s('photoUrl').isNotEmpty
+        ? s('photoUrl')
+        : (photos.isNotEmpty ? photos.first : '');
+
+    return SpeekUser(
+      id: s('id'),
+      name: s('name', 'Speeker'),
+      age: i('age'),
+      flag: s('flag'),
+      country: s('countryName').isNotEmpty ? s('countryName') : s('countryCode'),
+      city: s('city'),
+      role: ApiEnums.role(j['role']),
+      level: ApiEnums.cefr(j['englishLevel']),
+      photoUrl: photo,
+      photos: photos,
+      bio: s('bio'),
+      interests: interests,
+      levelXp: i('level', 1),
+      online: j['online'] == true,
+      distanceKm: d('distanceKm'),
+      lat: d('lat'),
+      lng: d('lng'),
+      isOnboarded: j['isOnboarded'] == true,
+      inCall: j['inCall'] == true,
+      callStartedAt: DateTime.tryParse('${j['callStartedAtUtc']}')?.toLocal(),
+    );
+  }
 }
 
 enum MessageKind { text, voice, callLog }
@@ -64,10 +111,28 @@ class Message {
     this.voiceDuration = '',
     this.time,
   });
+
+  /// Maps a backend `MessageDto` to a [Message].
+  factory Message.fromJson(Map<String, dynamic> j) {
+    final secs = (j['durationSeconds'] is num)
+        ? (j['durationSeconds'] as num).toInt()
+        : 0;
+    final dur = secs > 0
+        ? '${secs ~/ 60}:${(secs % 60).toString().padLeft(2, '0')}'
+        : '';
+    return Message(
+      text: (j['text'] ?? '').toString(),
+      outgoing: j['outgoing'] == true,
+      kind: ApiEnums.messageKind(j['kind']),
+      voiceDuration: dur,
+      time: DateTime.tryParse('${j['createdAtUtc']}')?.toLocal(),
+    );
+  }
 }
 
 @immutable
 class Chat {
+  final String id; // conversation id (empty for mock/no-conversation)
   final SpeekUser user;
   final String preview;
   final String timeLabel;
@@ -77,6 +142,7 @@ class Chat {
   final List<Message> messages;
 
   const Chat({
+    this.id = '',
     required this.user,
     required this.preview,
     required this.timeLabel,
@@ -85,6 +151,29 @@ class Chat {
     this.previewIsVoice = false,
     this.messages = const [],
   });
+
+  /// Maps a backend `ConversationDto` to a [Chat].
+  factory Chat.fromJson(Map<String, dynamic> j) {
+    final last = DateTime.tryParse('${j['lastMessageAtUtc']}')?.toLocal();
+    return Chat(
+      id: (j['id'] ?? '').toString(),
+      user: SpeekUser.fromJson((j['peer'] as Map).cast<String, dynamic>()),
+      preview: (j['preview'] ?? '').toString(),
+      timeLabel: _relativeTime(last),
+      unread: (j['unread'] is num) ? (j['unread'] as num).toInt() : 0,
+      isRequest: j['isRequest'] == true,
+      previewIsVoice: j['previewIsVoice'] == true,
+    );
+  }
+
+  static String _relativeTime(DateTime? t) {
+    if (t == null) return '';
+    final diff = DateTime.now().difference(t);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    return '${diff.inDays}d';
+  }
 }
 
 @immutable

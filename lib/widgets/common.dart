@@ -338,7 +338,9 @@ class Chip2 extends StatelessWidget {
   }
 }
 
-/// Circular network avatar with optional online dot and selection ring.
+/// Circular avatar. When [url] is empty (or fails to load), it falls back to a
+/// branded gradient circle with the person's initials — so a user without a
+/// photo still looks intentional, never broken.
 class Avatar extends StatelessWidget {
   final String url;
   final double size;
@@ -346,6 +348,7 @@ class Avatar extends StatelessWidget {
   final Color? ringColor;
   final double borderWidth;
   final Color? borderColor;
+  final String? name; // used for initials fallback
 
   const Avatar(
     this.url, {
@@ -355,10 +358,52 @@ class Avatar extends StatelessWidget {
     this.ringColor,
     this.borderWidth = 0,
     this.borderColor,
+    this.name,
   });
+
+  /// Deterministic gradient + initials from a name/seed.
+  Widget _initials() {
+    final seed = (name ?? '').trim();
+    final letters = seed.isEmpty
+        ? '🙂'
+        : seed
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .take(2)
+            .map((w) => w.characters.first.toUpperCase())
+            .join();
+    // Pick a stable gradient from the seed.
+    const palettes = [
+      [Color(0xFF6C63FF), Color(0xFF9D7BFF)],
+      [Color(0xFF3DD6E0), Color(0xFF6C63FF)],
+      [Color(0xFFFF6FB5), Color(0xFFF0A93B)],
+      [Color(0xFF45E07A), Color(0xFF3DD6E0)],
+      [Color(0xFFFFB547), Color(0xFFFF6FB5)],
+    ];
+    final idx = seed.isEmpty ? 0 : seed.codeUnits.fold<int>(0, (a, b) => a + b) % palettes.length;
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: palettes[idx],
+        ),
+      ),
+      child: Text(
+        letters,
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: size * 0.4,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final hasUrl = url.trim().isNotEmpty;
     return SizedBox(
       width: size,
       height: size,
@@ -380,15 +425,16 @@ class Avatar extends StatelessWidget {
                   : null,
             ),
             child: ClipOval(
-              child: CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: AppColors.n600),
-                errorWidget: (_, __, ___) => Container(
-                  color: AppColors.n600,
-                  child: const Icon(Icons.person, color: AppColors.n300),
-                ),
-              ),
+              child: hasUrl
+                  ? CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.cover,
+                      width: size,
+                      height: size,
+                      placeholder: (_, __) => Container(color: AppColors.n600),
+                      errorWidget: (_, __, ___) => _initials(),
+                    )
+                  : _initials(),
             ),
           ),
           if (online)

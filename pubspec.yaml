@@ -41,6 +41,16 @@ dependencies:
   geolocator: ^13.0.2
   in_app_purchase: ^3.2.0
 
+  # ---- Backend integration ----
+  http: ^1.2.2                     # REST client for the Speek API
+  flutter_secure_storage: ^9.2.2   # persists the JWT securely
+  google_sign_in: ^6.2.1           # Google identity token for social-login
+  sign_in_with_apple: ^6.1.3       # Apple identity token for social-login
+  signalr_netcore: ^1.3.7          # realtime hub (/hubs/realtime)
+  livekit_client: ^2.3.1           # voice/video media
+  permission_handler: ^11.3.1      # mic/camera permissions for calls
+  image_picker: ^1.1.2             # pick profile photo from gallery/camera
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

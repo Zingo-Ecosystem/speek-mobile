@@ -47,7 +47,7 @@ class _TabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
     return SizedBox(
-      height: 96 + bottomInset * 0.6,
+      height: 84 + bottomInset,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.bottomCenter,
@@ -57,14 +57,14 @@ class _TabBar extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
               child: Container(
-                height: 78 + bottomInset * 0.6,
+                height: 70 + bottomInset,
                 decoration: BoxDecoration(
                   color: const Color(0xFF0C0C12).withValues(alpha: 0.94),
                   border: Border(
                       top: BorderSide(
                           color: Colors.white.withValues(alpha: 0.07))),
                 ),
-                padding: EdgeInsets.only(bottom: bottomInset * 0.6),
+                padding: EdgeInsets.only(bottom: bottomInset),
                 child: Row(
                   children: [
                     Expanded(
@@ -94,7 +94,7 @@ class _TabBar extends StatelessWidget {
 
           // Center "Map" killer button
           Positioned(
-            bottom: 26 + bottomInset * 0.6,
+            bottom: 18 + bottomInset,
             child: _MapButton(
               active: index == 1,
               onTap: () => onChanged(1),

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../../data/mock_data.dart';
+import '../../core/session.dart';
+import '../../data/repositories.dart';
 import '../../models/models.dart';
+import '../../realtime/realtime_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/common.dart';
@@ -9,36 +13,82 @@ import '../call/incoming_call_screen.dart';
 
 class ConversationScreen extends StatefulWidget {
   final SpeekUser user;
-  const ConversationScreen({super.key, required this.user});
+  final String conversationId;
+  const ConversationScreen(
+      {super.key, required this.user, this.conversationId = ''});
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
 class _ConversationScreenState extends State<ConversationScreen> {
-  late List<Message> _messages = List.of(_seed());
+  List<Message> _messages = const [];
+  bool _loading = true;
   final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  StreamSubscription? _msgSub;
 
-  List<Message> _seed() {
-    final c = Mock.chats.firstWhere(
-      (c) => c.user.id == widget.user.id,
-      orElse: () => Mock.chats.first,
-    );
-    return c.user.id == widget.user.id ? c.messages : const [];
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _msgSub = RealtimeService.instance.onMessage.listen((m) {
+      // Append incoming messages for this peer.
+      if (mounted && !m.outgoing) {
+        setState(() => _messages = [..._messages, m]);
+        _jumpToEnd();
+      }
+    });
   }
 
-  void _send() {
+  Future<void> _load() async {
+    if (widget.conversationId.isEmpty || !Session.instance.isAuthenticated) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final msgs = await Repos.chat.messages(widget.conversationId);
+      if (!mounted) return;
+      setState(() {
+        _messages = msgs;
+        _loading = false;
+      });
+      _jumpToEnd();
+      Repos.chat.markRead(widget.conversationId).catchError((_) {});
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _jumpToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
+  Future<void> _send() async {
     final t = _controller.text.trim();
     if (t.isEmpty) return;
-    setState(() {
-      _messages = [..._messages, Message(text: t, outgoing: true)];
-      _controller.clear();
-    });
+    _controller.clear();
+    setState(() => _messages = [..._messages, Message(text: t, outgoing: true)]);
+    _jumpToEnd();
+    if (!Session.instance.isAuthenticated) return;
+    try {
+      await Repos.chat.send(
+        peerId: widget.user.id,
+        kind: MessageKind.text,
+        text: t,
+      );
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _msgSub?.cancel();
     _controller.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -51,17 +101,22 @@ class _ConversationScreenState extends State<ConversationScreen> {
         children: [
           _Header(user: widget.user, topPad: topPad),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(14),
-              children: [
-                Center(
-                  child: Text('Today',
-                      style: AppText.caption.copyWith(fontSize: 11)),
-                ),
-                const SizedBox(height: 8),
-                for (final m in _messages) _bubble(m),
-              ],
-            ),
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5, color: AppColors.brand400))
+                : ListView(
+                    controller: _scroll,
+                    padding: const EdgeInsets.all(14),
+                    children: [
+                      Center(
+                        child: Text('Today',
+                            style: AppText.caption.copyWith(fontSize: 11)),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final m in _messages) _bubble(m),
+                    ],
+                  ),
           ),
           _Composer(controller: _controller, onSend: _send),
         ],
@@ -179,7 +234,7 @@ class _Header extends StatelessWidget {
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          Avatar(user.photoUrl, size: 40),
+          Avatar(user.photoUrl, size: 40, name: user.name),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

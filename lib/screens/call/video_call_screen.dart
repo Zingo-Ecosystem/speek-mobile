@@ -1,17 +1,65 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../realtime/realtime_service.dart';
+import '../../services/call_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import 'call_controls.dart';
 import 'call_ended_screen.dart';
 
-class VideoCallScreen extends StatelessWidget {
+class VideoCallScreen extends StatefulWidget {
   final SpeekUser user;
   const VideoCallScreen({super.key, required this.user});
 
   @override
+  State<VideoCallScreen> createState() => _VideoCallScreenState();
+}
+
+class _VideoCallScreenState extends State<VideoCallScreen> {
+  StreamSubscription? _stateSub;
+  Timer? _ticker;
+  final _start = DateTime.now();
+  Duration _elapsed = Duration.zero;
+
+  String get _clock {
+    final s = _elapsed.inSeconds;
+    final h = s ~/ 3600;
+    final m = (s % 3600) ~/ 60;
+    final sec = s % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = sec.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsed = DateTime.now().difference(_start));
+    });
+    _stateSub = RealtimeService.instance.onCallState.listen((c) {
+      if (c.status >= 3 && mounted) {
+        _stateSub?.cancel();
+        CallService.instance.end();
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => CallEndedScreen(user: widget.user)));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _stateSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     final topPad = MediaQuery.of(context).padding.top;
     return Scaffold(
       body: Stack(
@@ -56,7 +104,7 @@ class VideoCallScreen extends StatelessWidget {
                           decoration: const BoxDecoration(
                               color: Colors.white, shape: BoxShape.circle)),
                       const SizedBox(width: 6),
-                      Text('LIVE · 04:17',
+                      Text('LIVE · $_clock',
                           style: AppText.caption.copyWith(
                               color: Colors.white, fontWeight: FontWeight.w700)),
                     ],
@@ -135,9 +183,11 @@ class VideoCallScreen extends StatelessWidget {
                 CallControl(
                     icon: Icons.close,
                     variant: CallControlVariant.end,
-                    onTap: () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                            builder: (_) => CallEndedScreen(user: user)))),
+                    onTap: () {
+                      CallService.instance.end();
+                      Navigator.of(context).pushReplacement(MaterialPageRoute(
+                          builder: (_) => CallEndedScreen(user: user)));
+                    }),
                 const SizedBox(width: 16),
                 const CallControl(
                     icon: Icons.cameraswitch_rounded, small: true),

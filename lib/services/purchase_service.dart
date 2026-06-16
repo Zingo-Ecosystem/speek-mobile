@@ -31,11 +31,20 @@ class PurchaseService {
     }
   }
 
+  // SubscriptionSource: AppStore = 2, PlayStore = 3
+  int get _storeSource =>
+      defaultTargetPlatform == TargetPlatform.iOS ? 2 : 3;
+
   void _onPurchaseUpdate(List<PurchaseDetails> purchases) {
     for (final p in purchases) {
       if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
-        AppState.instance.subscribe();
+        // Validate the receipt server-side; the backend is the source of truth.
+        AppState.instance.validatePurchase(
+          store: _storeSource,
+          productId: p.productID,
+          receiptData: p.verificationData.serverVerificationData,
+        );
       }
       if (p.pendingCompletePurchase) {
         _iap.completePurchase(p);

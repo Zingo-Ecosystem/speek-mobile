@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../data/api_enums.dart';
+import '../../data/repositories.dart';
+import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/snack.dart';
 import 'trial_started_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
@@ -19,16 +24,58 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   int _step = 0;
   static const _total = 4;
 
-  void _next() {
+  bool _submitting = false;
+
+  Future<void> _next() async {
+    // Require at least one uploaded photo before leaving the photos step.
+    if (_step == 0 && AppState.instance.onboardingPhotoUrls.isEmpty) {
+      showSnack(context, 'Please add at least one photo to continue.',
+          type: SnackType.error);
+      return;
+    }
     if (_step < _total - 1) {
       _controller.nextPage(
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-    } else {
-      AppState.instance.register();
-      AppState.instance.startTrial();
-      Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const TrialStartedScreen()));
+      return;
     }
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    final s = AppState.instance;
+    final parts = s.country.trim().split(' ');
+    final flag = parts.isNotEmpty ? parts.first : '';
+    final countryName = parts.length > 1 ? parts.sublist(1).join(' ') : s.country;
+
+    // Persist onboarding to the backend (best-effort — never block the user).
+    try {
+      await Repos.profile.completeOnboarding({
+        'name': s.name,
+        'age': s.age,
+        'gender': s.gender,
+        'countryCode': s.countryCode,
+        'countryName': countryName,
+        'flag': flag,
+        'city': s.city,
+        'role': ApiEnums.roleToInt(
+            s.isLearner ? SpeakerRole.learner : SpeakerRole.native),
+        'englishLevel': ApiEnums.cefrToInt(s.level),
+        'bio': s.bio,
+        'goals': 3, // SpeakingPractice | Friendship
+        'interests': s.interests,
+        'photoUrls': s.onboardingPhotoUrls,
+        'languages': const <Map<String, dynamic>>[],
+      });
+      s.isOnboarded = true;
+      await s.hydrate();
+    } catch (_) {
+      s.isOnboarded = true;
+    }
+
+    s.register();
+    s.startTrial();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const TrialStartedScreen()));
   }
 
   void _back() {
@@ -62,14 +109,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     child: Text('Step ${_step + 1} of $_total',
                         textAlign: TextAlign.center, style: AppText.h3.copyWith(fontSize: 15)),
                   ),
-                  if (_step == 0)
-                    TextButton(
-                      onPressed: _next,
-                      child: Text('Skip',
-                          style: AppText.label.copyWith(color: AppColors.brand300)),
-                    )
-                  else
-                    const SizedBox(width: 42),
+                  const SizedBox(width: 42),
                 ],
               ),
             ),
@@ -127,9 +167,44 @@ class _ProgressBar extends StatelessWidget {
   }
 }
 
-// ---- Step 1: Photos ----
-class _PhotosStep extends StatelessWidget {
+// ---- Step 1: Photos (real upload, at least 1 required) ----
+class _PhotosStep extends StatefulWidget {
   const _PhotosStep();
+  @override
+  State<_PhotosStep> createState() => _PhotosStepState();
+}
+
+class _PhotosStepState extends State<_PhotosStep> {
+  List<String> get _urls => AppState.instance.onboardingPhotoUrls;
+  final _busy = <int>{}; // slot indexes currently uploading
+  static const _slots = 4;
+
+  Future<void> _pick(int slot) async {
+    if (_busy.contains(slot)) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1080,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      setState(() => _busy.add(slot));
+      final url = await AppState.instance.uploadOnboardingPhoto(picked.path);
+      if (!mounted) return;
+      setState(() {
+        _busy.remove(slot);
+        if (url.isNotEmpty) _urls.add(url);
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy.remove(slot));
+        showSnack(context, 'Upload failed: $e', type: SnackType.error);
+      }
+    }
+  }
+
+  void _remove(int index) => setState(() => _urls.removeAt(index));
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -137,7 +212,7 @@ class _PhotosStep extends StatelessWidget {
       children: [
         Text('Add your best photos', style: AppText.h2),
         const SizedBox(height: 6),
-        _muted(context, 'Profiles with 3+ photos get ', '5× more', ' conversations.'),
+        _muted(context, 'Add at least ', '1 photo', ' — the first is your main.'),
         const SizedBox(height: 18),
         GridView.count(
           shrinkWrap: true,
@@ -146,30 +221,26 @@ class _PhotosStep extends StatelessWidget {
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
           children: [
-            _photo(
-                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=500&q=80',
-                main: true),
-            _photo(
-                'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80'),
-            _addTile(),
-            _addTile(),
+            for (int i = 0; i < _slots; i++)
+              if (i < _urls.length)
+                _photo(i)
+              else
+                _addTile(i, uploading: _busy.contains(i)),
           ],
         ),
-        const SizedBox(height: 12),
-        Row(children: [Expanded(child: _addTile())]),
       ],
     );
   }
 
-  Widget _photo(String url, {bool main = false}) => Stack(
+  Widget _photo(int index) => Stack(
         children: [
           Positioned.fill(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
-              child: Image.network(url, fit: BoxFit.cover),
+              child: Image.network(_urls[index], fit: BoxFit.cover),
             ),
           ),
-          if (main)
+          if (index == 0)
             Positioned(
               top: 8,
               left: 8,
@@ -185,20 +256,43 @@ class _PhotosStep extends StatelessWidget {
                         fontWeight: FontWeight.w700)),
               ),
             ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: GestureDetector(
+              onTap: () => _remove(index),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                    color: Colors.black54, shape: BoxShape.circle),
+                child: const Icon(Icons.close, size: 16, color: Colors.white),
+              ),
+            ),
+          ),
         ],
       );
 
-  Widget _addTile() => Container(
-        decoration: BoxDecoration(
-          color: AppColors.brand500.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-              color: AppColors.brand500.withValues(alpha: 0.4),
-              width: 2,
-              style: BorderStyle.solid),
+  Widget _addTile(int slot, {bool uploading = false}) => GestureDetector(
+        onTap: uploading ? null : () => _pick(slot),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.brand500.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: AppColors.brand500.withValues(alpha: 0.4),
+                width: 2,
+                style: BorderStyle.solid),
+          ),
+          child: Center(
+            child: uploading
+                ? const SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5, color: AppColors.brand400))
+                : const Icon(Icons.add, color: AppColors.brand400, size: 30),
+          ),
         ),
-        child: const Center(
-            child: Icon(Icons.add, color: AppColors.brand400, size: 30)),
       );
 }
 
@@ -210,16 +304,42 @@ class _BasicsStep extends StatefulWidget {
 }
 
 class _BasicsStepState extends State<_BasicsStep> {
-  int _role = 0; // 0 learner, 1 native
-  String _level = 'B1';
-  String _gender = 'Female';
-  String _country = '🇫🇷 France';
+  final _s = AppState.instance;
+  late final _name = TextEditingController(text: _s.name == 'Speeker' ? '' : _s.name);
+  late final _age = TextEditingController(text: _s.age > 0 ? '${_s.age}' : '');
+  late int _role = _s.isLearner ? 0 : 1;
+  late String _level = _s.level.isNotEmpty ? _s.level : 'B1';
+  late String _gender = _s.gender;
+  late String _country = _s.country;
 
   static const _genders = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
   static const _countries = [
-    '🇫🇷 France', '🇺🇸 USA', '🇬🇧 UK', '🇪🇸 Spain', '🇩🇪 Germany',
-    '🇧🇷 Brazil', '🇯🇵 Japan', '🇰🇷 Korea', '🇮🇳 India', '🇺🇿 Uzbekistan',
+    '🇺🇿 Uzbekistan', '🇫🇷 France', '🇺🇸 USA', '🇬🇧 UK', '🇪🇸 Spain',
+    '🇩🇪 Germany', '🇧🇷 Brazil', '🇯🇵 Japan', '🇰🇷 Korea', '🇮🇳 India',
+    '🇷🇺 Russia', '🇹🇷 Turkey', '🇰🇿 Kazakhstan',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Write-through so the wizard always submits the latest values.
+    _name.addListener(() => _s.name = _name.text.trim().isEmpty ? _s.name : _name.text.trim());
+    _age.addListener(() {
+      final a = int.tryParse(_age.text.trim());
+      if (a != null && a > 0) _s.age = a;
+    });
+    _s.gender = _gender;
+    _s.country = _country;
+    _s.isLearner = _role == 0;
+    _s.level = _level;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _age.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,11 +351,17 @@ class _BasicsStepState extends State<_BasicsStep> {
         Text('This helps us match you with the right people.',
             style: AppText.smMuted),
         const SizedBox(height: 18),
-        const _Field(label: 'First name', value: 'Chloe'),
+        _TextField(label: 'First name', controller: _name, hint: 'Your name'),
         const SizedBox(height: 16),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(child: _Field(label: 'Age', value: '24')),
+            Expanded(
+                child: _TextField(
+                    label: 'Age',
+                    controller: _age,
+                    hint: '18',
+                    keyboard: TextInputType.number)),
             const SizedBox(width: 12),
             Expanded(
               flex: 2,
@@ -248,7 +374,7 @@ class _BasicsStepState extends State<_BasicsStep> {
                       title: 'Gender',
                       options: _genders,
                       selected: _gender);
-                  if (v != null) setState(() => _gender = v);
+                  if (v != null) setState(() { _gender = v; _s.gender = v; });
                 },
               ),
             ),
@@ -259,9 +385,9 @@ class _BasicsStepState extends State<_BasicsStep> {
         const SizedBox(height: 8),
         Row(
           children: [
-            _seg('🎓 Learner', _role == 0, () => setState(() => _role = 0)),
+            _seg('🎓 Learner', _role == 0, () => setState(() { _role = 0; _s.isLearner = true; })),
             const SizedBox(width: 10),
-            _seg('🎙 Native', _role == 1, () => setState(() => _role = 1)),
+            _seg('🎙 Native', _role == 1, () => setState(() { _role = 1; _s.isLearner = false; })),
           ],
         ),
         const SizedBox(height: 16),
@@ -273,7 +399,7 @@ class _BasicsStepState extends State<_BasicsStep> {
           children: [
             for (final l in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'])
               GestureDetector(
-                onTap: () => setState(() => _level = l),
+                onTap: () => setState(() { _level = l; _s.level = l; }),
                 child: Chip2(l, solid: _level == l),
               ),
           ],
@@ -286,7 +412,7 @@ class _BasicsStepState extends State<_BasicsStep> {
           onTap: () async {
             final v = await pickOption(context,
                 title: 'Country', options: _countries, selected: _country);
-            if (v != null) setState(() => _country = v);
+            if (v != null) setState(() { _country = v; _s.country = v; });
           },
         ),
       ],
@@ -332,7 +458,9 @@ class _InterestsStepState extends State<_InterestsStep> {
     '🍳 Cooking', '🎬 Movies', '⚽ Sports', '📷 Photography', '☕ Coffee',
     '🎨 Art', '💻 Tech', '🐶 Pets', '🧘 Yoga', '🎤 Karaoke', '🌱 Nature',
   ];
-  final _selected = {'🎵 Music', '✈️ Travel', '🎮 Gaming', '🍳 Cooking', '🎬 Movies', '💻 Tech'};
+  late final Set<String> _selected = {...AppState.instance.interests};
+
+  void _sync() => AppState.instance.interests = _selected.toList();
 
   @override
   Widget build(BuildContext context) {
@@ -350,8 +478,10 @@ class _InterestsStepState extends State<_InterestsStep> {
           children: [
             for (final i in _all)
               GestureDetector(
-                onTap: () => setState(() =>
-                    _selected.contains(i) ? _selected.remove(i) : _selected.add(i)),
+                onTap: () => setState(() {
+                  _selected.contains(i) ? _selected.remove(i) : _selected.add(i);
+                  _sync();
+                }),
                 child: Chip2(i, active: _selected.contains(i)),
               ),
           ],
@@ -495,6 +625,57 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(text,
       style: AppText.label.copyWith(color: AppColors.textSecondary));
+}
+
+class _TextField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType? keyboard;
+  const _TextField(
+      {required this.label,
+      required this.controller,
+      this.hint = '',
+      this.keyboard});
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Label(label),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 48,
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboard,
+            style: AppText.body,
+            cursorColor: AppColors.brand400,
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: AppText.body.copyWith(color: AppColors.n300),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.05),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(Radii.md),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(Radii.md),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(Radii.md),
+                borderSide: const BorderSide(color: AppColors.brand500),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _Field extends StatelessWidget {

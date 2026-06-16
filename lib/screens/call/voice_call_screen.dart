@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../realtime/realtime_service.dart';
+import '../../services/call_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/common.dart';
@@ -19,6 +22,45 @@ class VoiceCallScreen extends StatefulWidget {
 }
 
 class _VoiceCallScreenState extends State<VoiceCallScreen> {
+  StreamSubscription? _stateSub;
+  Timer? _ticker;
+  final _start = DateTime.now();
+  Duration _elapsed = Duration.zero;
+
+  String get _clock {
+    final s = _elapsed.inSeconds;
+    final h = s ~/ 3600;
+    final m = (s % 3600) ~/ 60;
+    final sec = s % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = sec.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsed = DateTime.now().difference(_start));
+    });
+    // Leave automatically if the other party declines/ends/cancels.
+    _stateSub = RealtimeService.instance.onCallState.listen((c) {
+      if (c.status >= 3 && mounted) {
+        _stateSub?.cancel();
+        CallService.instance.end();
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => CallEndedScreen(user: widget.user)));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _stateSub?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final u = widget.user;
@@ -47,7 +89,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8)),
-                    child: Text('🎙 Voice · 02:48',
+                    child: Text('🎙 Voice · $_clock',
                         style: AppText.caption.copyWith(color: Colors.white)),
                   ),
                   const Spacer(flex: 2),
@@ -118,6 +160,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   }
 
   void _end(BuildContext context) {
+    CallService.instance.end();
     Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => CallEndedScreen(user: widget.user)));
   }

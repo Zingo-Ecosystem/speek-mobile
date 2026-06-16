@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
-import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_buttons.dart';
+import '../shell.dart';
 import '../onboarding/create_account_screen.dart';
 
 /// Soft-wall shown when a guest taps Call/Message before registering.
@@ -79,11 +79,12 @@ class _RegisterGateSheet extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               AuthButtons(
-                onAuth: () {
+                onAuthenticated: (needsOnboarding) {
                   Navigator.of(context).pop();
-                  AppState.instance.register();
                   Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const CreateAccountScreen()));
+                      builder: (_) => needsOnboarding
+                          ? const CreateAccountScreen()
+                          : const ShellScreen(initialIndex: 1)));
                 },
               ),
             ],

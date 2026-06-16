@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
+import '../shell.dart';
+import 'create_account_screen.dart';
 import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -24,17 +27,35 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 1700), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          transitionDuration: const Duration(milliseconds: 450),
-          pageBuilder: (_, a, __) => const OnboardingScreen(),
-          transitionsBuilder: (_, a, __, child) =>
-              FadeTransition(opacity: a, child: child),
-        ),
-      );
-    });
+    _boot();
+  }
+
+  Future<void> _boot() async {
+    // Try to restore a session while the splash animation plays.
+    final results = await Future.wait([
+      AppState.instance.bootstrap(),
+      Future.delayed(const Duration(milliseconds: 1600)),
+    ]);
+    if (!mounted) return;
+    final authed = results.first as bool;
+
+    Widget next;
+    if (authed) {
+      next = AppState.instance.isOnboarded
+          ? const ShellScreen(initialIndex: 1)
+          : const CreateAccountScreen();
+    } else {
+      next = const OnboardingScreen();
+    }
+
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 450),
+        pageBuilder: (_, a, __) => next,
+        transitionsBuilder: (_, a, __, child) =>
+            FadeTransition(opacity: a, child: child),
+      ),
+    );
   }
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
@@ -20,6 +22,67 @@ Future<void> showUserPreview(BuildContext context, SpeekUser user) {
     builder: (_) => _UserPreviewSheet(user: user),
   );
 }
+
+/// Live "🗣 Talking · mm:ss" badge that ticks every second.
+class _TalkingBadge extends StatefulWidget {
+  final DateTime? since;
+  const _TalkingBadge({this.since});
+  @override
+  State<_TalkingBadge> createState() => _TalkingBadgeState();
+}
+
+class _TalkingBadgeState extends State<_TalkingBadge> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  String get _label {
+    final since = widget.since;
+    if (since == null) return 'In a call';
+    final d = DateTime.now().difference(since);
+    final s = d.inSeconds < 0 ? 0 : d.inSeconds;
+    final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
+    final clock = h > 0
+        ? '$h:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}'
+        : '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+    return 'Talking · $clock';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Pill('🗣 $_label',
+        bg: AppColors.success.withValues(alpha: 0.15),
+        fg: AppColors.success,
+        border: AppColors.success.withValues(alpha: 0.4));
+  }
+}
+
+Widget _previewFallback(SpeekUser user) => SizedBox(
+      height: 220,
+      width: double.infinity,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF241F4D), Color(0xFF0F0E1A)],
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Avatar('', size: 110, name: user.name),
+      ),
+    );
 
 class _UserPreviewSheet extends StatelessWidget {
   final SpeekUser user;
@@ -83,10 +146,14 @@ class _UserPreviewSheet extends StatelessWidget {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: Image.network(user.photoUrl,
-                            height: 220,
-                            width: double.infinity,
-                            fit: BoxFit.cover),
+                        child: user.photoUrl.isNotEmpty
+                            ? Image.network(user.photoUrl,
+                                height: 220,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _previewFallback(user))
+                            : _previewFallback(user),
                       ),
                       if (user.online)
                         Positioned(
@@ -118,6 +185,10 @@ class _UserPreviewSheet extends StatelessWidget {
                                         .copyWith(fontSize: 24)),
                                 const SizedBox(height: 2),
                                 Text(subtitle, style: AppText.smMuted),
+                                if (user.inCall) ...[
+                                  const SizedBox(height: 6),
+                                  _TalkingBadge(since: user.callStartedAt),
+                                ],
                               ],
                             ),
                           ),
@@ -149,8 +220,10 @@ class _UserPreviewSheet extends StatelessWidget {
                                   onTap: () => _message(context))),
                           const SizedBox(width: 10),
                           Expanded(
-                              child: PrimaryButton('📞 Call now',
-                                  onTap: () => _call(context))),
+                              child: user.inCall
+                                  ? GhostButton('📞 In a call', onTap: null)
+                                  : PrimaryButton('📞 Call now',
+                                      onTap: () => _call(context))),
                         ],
                       ),
                     ],
