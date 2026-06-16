@@ -32,9 +32,36 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Decode keystore
+      - name: Prepare keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD:   ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS:      ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.jks
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+          else
+            echo "KEYSTORE_BASE64 topilmadi — yangi keystore yaratilmoqda..."
+            keytool -genkeypair -v \
+              -keystore android/app/release.jks \
+              -storetype JKS \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias "${KEY_ALIAS:-speek}" \
+              -storepass "${STORE_PASSWORD:-speek2024!}" \
+              -keypass  "${KEY_PASSWORD:-speek2024!}" \
+              -dname "CN=Speek, OU=Mobile, O=Speek, L=Tashkent, S=Tashkent, C=UZ"
+
+            B64=$(base64 -w 0 android/app/release.jks)
+
+            echo "### Yangi keystore yaratildi" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Quyidagi qiymatni \`KEYSTORE_BASE64\` secretiga saqlang:" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$B64" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Create key.properties
         run: |
@@ -49,8 +76,7 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
-          BUILD=$(echo $GITHUB_RUN_NUMBER)
-          echo "name=v${VERSION}-build${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "name=v${VERSION}-build${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Build universal APK
         run: flutter build apk --release
