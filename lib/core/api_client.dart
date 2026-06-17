@@ -59,6 +59,10 @@ class ApiClient {
       .put(_uri(path), headers: _headers(), body: jsonEncode(body ?? {}))
       .timeout(AppConfig.httpTimeout));
 
+  Future<dynamic> delete(String path) => _send(() => _http
+      .delete(_uri(path), headers: _headers(json: false))
+      .timeout(AppConfig.httpTimeout));
+
   /// Uploads a file via multipart/form-data to [path] (field name "file").
   /// Returns the decoded JSON body.
   Future<dynamic> uploadFile(String path, String filePath,

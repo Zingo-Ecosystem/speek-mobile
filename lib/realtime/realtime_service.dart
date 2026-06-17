@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../core/session.dart';
 import '../data/dto.dart';
 import '../models/models.dart';
+import '../services/notification_service.dart';
 
 /// Wraps the SignalR connection to `/hubs/realtime`.
 ///
@@ -19,6 +20,16 @@ class RealtimeService {
 
   HubConnection? _hub;
   bool _starting = false;
+  Timer? _retryTimer;
+
+  /// Set to the peer ID of the currently open ConversationScreen.
+  /// Null when no conversation is open.
+  String? activePeerId;
+
+  final _peerNames = <String, String>{};
+
+  /// Call from ConversationScreen.initState so notifications know the peer's name.
+  void registerPeer(String id, String name) => _peerNames[id] = name;
 
   final _messages = StreamController<Message>.broadcast();
   final _incomingCalls = StreamController<CallData>.broadcast();
@@ -38,6 +49,8 @@ class RealtimeService {
     if (_starting || isConnected) return;
     if (!Session.instance.isAuthenticated) return;
     _starting = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     try {
       final hub = HubConnectionBuilder()
           .withUrl(
@@ -49,7 +62,23 @@ class RealtimeService {
           .withAutomaticReconnect()
           .build();
 
-      hub.on('message', (a) => _emit(a, _messages, Message.fromJson));
+      hub.on('message', (a) {
+        debugPrint('[RealtimeService] message raw: $a');
+        final map = _first(a);
+        if (map != null && map['outgoing'] != true) {
+          final senderId =
+              (map['senderId'] ?? map['from'] ?? '').toString();
+          if (senderId.isNotEmpty && senderId != activePeerId) {
+            final name = _peerNames[senderId] ?? 'Speek';
+            final text = (map['text'] ?? '').toString();
+            NotificationService.instance.showMessage(
+              senderName: name,
+              text: text.isEmpty ? '📎 Media' : text,
+            );
+          }
+        }
+        _emit(a, _messages, Message.fromJson);
+      });
       hub.on('incomingCall', (a) {
         debugPrint('[RealtimeService] incomingCall raw: $a');
         _emit(a, _incomingCalls, CallData.fromJson);
@@ -69,18 +98,44 @@ class RealtimeService {
         }
       });
 
-      hub.onclose(({Exception? error}) => debugPrint('[RealtimeService] connection closed: $error'));
-      hub.onreconnecting(({Exception? error}) => debugPrint('[RealtimeService] reconnecting: $error'));
-      hub.onreconnected(({String? connectionId}) => debugPrint('[RealtimeService] reconnected id=$connectionId'));
+      hub.onclose(({Exception? error}) {
+        debugPrint('[RealtimeService] connection closed: $error');
+        // withAutomaticReconnect handles transient drops; schedule a manual
+        // retry here only for clean closes (error == null) or fatal failures.
+        _scheduleRetry();
+      });
+      hub.onreconnecting(({Exception? error}) =>
+          debugPrint('[RealtimeService] reconnecting: $error'));
+      hub.onreconnected(({String? connectionId}) =>
+          debugPrint('[RealtimeService] reconnected id=$connectionId'));
 
       _hub = hub;
       await hub.start();
       debugPrint('[RealtimeService] connected to ${AppConfig.realtimeHubUrl}');
-    } catch (e, st) {
-      debugPrint('[RealtimeService] connect failed: $e\n$st');
+    } catch (e) {
+      debugPrint('[RealtimeService] connect failed: $e');
+      _hub = null;
+      _scheduleRetry();
     } finally {
       _starting = false;
     }
+  }
+
+  /// Schedules a reconnect attempt with exponential-ish back-off (5 s → 15 s).
+  int _retryCount = 0;
+  void _scheduleRetry() {
+    if (!Session.instance.isAuthenticated) return;
+    _retryTimer?.cancel();
+    final delay = _retryCount < 3
+        ? const Duration(seconds: 5)
+        : const Duration(seconds: 15);
+    _retryCount++;
+    _retryTimer = Timer(delay, () async {
+      if (Session.instance.isAuthenticated) {
+        await connect();
+        if (isConnected) _retryCount = 0;
+      }
+    });
   }
 
   /// Relay a typing indicator to a peer.
@@ -92,6 +147,9 @@ class RealtimeService {
   }
 
   Future<void> disconnect() async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryCount = 0;
     try {
       await _hub?.stop();
     } catch (_) {}

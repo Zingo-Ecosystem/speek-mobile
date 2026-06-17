@@ -94,23 +94,40 @@ class SpeekUser {
   }
 }
 
-enum MessageKind { text, voice, callLog }
+enum MessageKind { text, voice, callLog, image, document }
 
 @immutable
 class Message {
+  final String id;
   final String text;
   final bool outgoing;
   final MessageKind kind;
   final String voiceDuration; // for voice notes
+  final String mediaUrl;
+  final String documentName; // for document/file messages
   final DateTime? time;
 
   const Message({
+    this.id = '',
     required this.text,
     this.outgoing = false,
     this.kind = MessageKind.text,
     this.voiceDuration = '',
+    this.mediaUrl = '',
+    this.documentName = '',
     this.time,
   });
+
+  Message copyWith({String? text}) => Message(
+        id: id,
+        text: text ?? this.text,
+        outgoing: outgoing,
+        kind: kind,
+        voiceDuration: voiceDuration,
+        mediaUrl: mediaUrl,
+        documentName: documentName,
+        time: time,
+      );
 
   /// Maps a backend `MessageDto` to a [Message].
   factory Message.fromJson(Map<String, dynamic> j) {
@@ -121,10 +138,13 @@ class Message {
         ? '${secs ~/ 60}:${(secs % 60).toString().padLeft(2, '0')}'
         : '';
     return Message(
+      id: (j['id'] ?? '').toString(),
       text: (j['text'] ?? '').toString(),
       outgoing: j['outgoing'] == true,
       kind: ApiEnums.messageKind(j['kind']),
       voiceDuration: dur,
+      mediaUrl: (j['mediaUrl'] ?? '').toString(),
+      documentName: (j['documentName'] ?? '').toString(),
       time: DateTime.tryParse('${j['createdAtUtc']}')?.toLocal(),
     );
   }

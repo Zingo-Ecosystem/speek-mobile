@@ -152,6 +152,10 @@ class _UserPreviewSheet extends StatelessWidget {
                                 height: 220,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
+                                loadingBuilder: (_, child, progress) =>
+                                    progress == null
+                                        ? child
+                                        : _previewFallback(user),
                                 errorBuilder: (_, __, ___) =>
                                     _previewFallback(user))
                             : _previewFallback(user),

@@ -43,6 +43,12 @@ class AppTheme {
       ),
       splashFactory: InkRipple.splashFactory,
       iconTheme: const IconThemeData(color: AppColors.textPrimary),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 

@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   geolocator: ^13.0.2
@@ -49,7 +50,13 @@ dependencies:
   signalr_netcore: ^1.3.7          # realtime hub (/hubs/realtime)
   livekit_client: ^2.3.1           # voice/video media
   permission_handler: ^11.3.1      # mic/camera permissions for calls
+  flutter_local_notifications: ^17.2.4  # in-app local push notifications
+  emoji_picker_flutter: ^4.4.0          # emoji keyboard panel
   image_picker: ^1.1.2             # pick profile photo from gallery/camera
+  file_picker: ^8.1.6              # pick any file for chat attachments
+  record: ^7.0.0                   # voice message recording
+  audioplayers: ^6.1.0             # voice message playback
+  path_provider: ^2.1.4            # temp directory for voice files
 
 dev_dependencies:
   flutter_test:

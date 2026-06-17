@@ -6,9 +6,21 @@ import '../models/models.dart';
 import 'api_enums.dart';
 import 'dto.dart';
 
-List<Map<String, dynamic>> _list(dynamic v) =>
-    (v as List?)?.map((e) => (e as Map).cast<String, dynamic>()).toList() ??
-    const [];
+List<Map<String, dynamic>> _list(dynamic v) {
+  // Plain array
+  if (v is List) {
+    return v.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+  // Paginated envelope: { items: [...] } or similar
+  if (v is Map) {
+    final inner = v['items'] ?? v['data'] ?? v['conversations'] ??
+        v['messages'] ?? v['results'];
+    if (inner is List) {
+      return inner.map((e) => (e as Map).cast<String, dynamic>()).toList();
+    }
+  }
+  return const [];
+}
 
 // ---------------------------------------------------------------------------
 // Profile
@@ -110,23 +122,37 @@ class MapRepository {
 class ChatRepository {
   final _api = ApiClient.instance;
 
-  Future<List<Chat>> conversations() async {
-    final j = await _api.get('/Chat/conversations');
+  Future<List<Chat>> conversations({int take = 20, DateTime? cursor}) async {
+    final j = await _api.get('/Chat/conversations', query: {
+      'take': take,
+      if (cursor != null) 'cursor': cursor.toUtc().toIso8601String(),
+    });
     return _list(j).map(Chat.fromJson).toList();
   }
 
-  Future<List<Message>> messages(String conversationId,
-      {int take = 30, DateTime? before}) async {
-    final j = await _api.get('/Chat/conversations/$conversationId/messages',
-        query: {'take': take, if (before != null) 'before': before.toUtc().toIso8601String()});
+  Future<List<Message>> messages(
+    String conversationId, {
+    int take = 30,
+    DateTime? before,
+    DateTime? after,
+  }) async {
+    final j = await _api.get(
+      '/Chat/conversations/$conversationId/messages',
+      query: {
+        'take': take,
+        if (before != null) 'before': before.toUtc().toIso8601String(),
+        if (after != null) 'after': after.toUtc().toIso8601String(),
+      },
+    );
     return _list(j).map(Message.fromJson).toList();
   }
 
   Future<Message> send({
     required String peerId,
     required MessageKind kind,
-    required String text,
+    String text = '',
     String? mediaUrl,
+    String? documentName,
     int durationSeconds = 0,
   }) async {
     final j = await _api.post('/Chat/messages', body: {
@@ -134,9 +160,38 @@ class ChatRepository {
       'kind': ApiEnums.messageKindToInt(kind),
       'text': text,
       'mediaUrl': mediaUrl,
+      'documentName': documentName,
       'durationSeconds': durationSeconds,
     });
     return Message.fromJson((j as Map).cast());
+  }
+
+  Future<String> uploadMedia(String filePath) async {
+    final j = await _api.uploadFile('/Upload', filePath);
+    if (j is! Map) throw ApiException(0, 'Unexpected upload response.');
+    return (j['url'] ?? '').toString();
+  }
+
+  Future<void> editMessage(String id, String text) =>
+      _api.put('/Chat/messages/$id', body: {'text': text});
+
+  Future<void> deleteMessage(String id) => _api.delete('/Chat/messages/$id');
+
+  Future<List<String>> checkDeleted(List<String> ids) async {
+    final j = await _api.post('/Chat/messages/check-deleted', body: {'ids': ids});
+    return (_list(j)).map((e) => '${e['id']}').toList();
+  }
+
+  /// Searches the conversations list for an existing conversation with [peerId].
+  /// Returns the conversation ID, or empty string if none found.
+  Future<String> findConversationByPeer(String peerId) async {
+    try {
+      final chats = await conversations(take: 50);
+      for (final c in chats) {
+        if (c.user.id == peerId) return c.id;
+      }
+    } catch (_) {}
+    return '';
   }
 
   Future<void> markRead(String conversationId) =>

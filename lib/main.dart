@@ -5,6 +5,7 @@ import 'core/api_client.dart';
 import 'core/session.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'services/call_manager.dart';
+import 'services/notification_service.dart';
 import 'services/purchase_service.dart';
 import 'theme/app_theme.dart';
 
@@ -13,6 +14,7 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(AppTheme.systemOverlay);
   // Restore any persisted session early so the splash can route correctly.
   Session.instance.load();
+  NotificationService.instance.init();
   PurchaseService.instance.init();
   CallManager.instance.start();
   ApiClient.onUnauthenticated = () {

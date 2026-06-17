@@ -263,9 +263,17 @@ class _ChatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) =>
-              ConversationScreen(user: chat.user, conversationId: chat.id))),
+      onTap: () {
+        // Start fetching messages immediately on tap so they arrive during
+        // the navigation animation rather than after the screen appears.
+        final prefetch = Repos.chat.messages(chat.id);
+        Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ConversationScreen(
+                  user: chat.user,
+                  conversationId: chat.id,
+                  prefetch: prefetch,
+                )));
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 11),
         child: Row(
