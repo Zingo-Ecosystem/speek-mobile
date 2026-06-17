@@ -30,7 +30,7 @@ class AppConfig {
   static const String googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
     defaultValue:
-        '40470320500-ap0qctevqt33q6mgfmpa9uin4kii5cnr.apps.googleusercontent.com',
+        '40470320500-t9s1uamhm969q3g9divb54c70la1p6eh.apps.googleusercontent.com',
   );
 
   static bool get hasGoogleAuth => googleServerClientId.isNotEmpty;
