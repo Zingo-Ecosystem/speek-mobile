@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart'
@@ -11,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import '../../core/api_client.dart';
 import '../../core/session.dart';
 import '../../data/repositories.dart';
 import '../../models/models.dart';
@@ -56,8 +56,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
   Timer? _typingTimer;
 
   // Media state ---------------------------------------------------------------
-  // Images: URL added here → CachedNetworkImage loads it
-  final _shownImages = <String>{};
+  // Images: remote URL → downloaded local path
+  final _imageLocalPaths = <String, String>{};
+  final _downloadingImages = <String>{};
   // Voice: remote URL → downloaded local path
   final _voiceLocalPaths = <String, String>{};
   final _downloadingVoices = <String>{};
@@ -163,8 +164,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     }
   }
 
-  /// After loading messages, check the cache for any media already downloaded
-  /// in a previous session and restore their local state so they render ready.
+  /// After loading messages, restore any media already cached in a previous session.
   Future<void> _restoreCachedMedia(List<Message> msgs) async {
     for (final m in msgs) {
       final url = m.mediaUrl;
@@ -172,9 +172,17 @@ class _ConversationScreenState extends State<ConversationScreen> {
       final info = await DefaultCacheManager().getFileFromCache(url);
       if (info == null || !mounted) continue;
       if (m.kind == MessageKind.image) {
-        setState(() => _shownImages.add(url));
+        setState(() => _imageLocalPaths[url] = info.file.path);
       } else if (m.kind == MessageKind.voice) {
-        setState(() => _voiceLocalPaths[url] = info.file.path);
+        // Cache manager stores files with a .file extension which Android
+        // MediaPlayer cannot decode. Copy to a temp path with the real extension.
+        final ext = url.split('.').last.split('?').first;
+        final dir = await getTemporaryDirectory();
+        final localPath = '${dir.path}/${url.hashCode}.$ext';
+        if (!File(localPath).existsSync()) {
+          await info.file.copy(localPath);
+        }
+        if (mounted) setState(() => _voiceLocalPaths[url] = localPath);
       }
     }
   }
@@ -221,8 +229,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (!Session.instance.isAuthenticated) return;
     try {
       final url = await Repos.chat.uploadMedia(filePath);
-      // Cache the local file under the remote URL so it never re-downloads.
+      // Cache under the remote URL so it never re-downloads.
       final bytes = await File(filePath).readAsBytes();
+      final dir = await getTemporaryDirectory();
+      final localPath = '${dir.path}/${url.hashCode}.jpg';
+      await File(localPath).writeAsBytes(bytes);
       await DefaultCacheManager().putFile(url, bytes, fileExtension: 'jpg');
       final sent = await Repos.chat.send(
         peerId: widget.user.id,
@@ -231,7 +242,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
       );
       if (mounted) {
         setState(() {
-          _shownImages.add(url);
+          // Key by sent.mediaUrl (normalized) so _imageNote lookup always hits.
+          _imageLocalPaths[sent.mediaUrl] = localPath;
           final idx = _messages.lastIndexOf(optimistic);
           if (idx >= 0) {
             final list = List<Message>.from(_messages);
@@ -358,24 +370,32 @@ class _ConversationScreenState extends State<ConversationScreen> {
   // Media helpers
   // ---------------------------------------------------------------------------
 
-  // Tapping "download" on an image — CachedNetworkImage handles the actual
-  // fetch and stores it in the shared DefaultCacheManager cache automatically.
-  void _showImage(String url) => setState(() => _shownImages.add(url));
+  Future<void> _downloadImage(String url) async {
+    if (_downloadingImages.contains(url) || _imageLocalPaths.containsKey(url)) return;
+    setState(() => _downloadingImages.add(url));
+    try {
+      final bytes = await ApiClient.instance.downloadBytes(url);
+      final dir = await getTemporaryDirectory();
+      final ext = url.split('.').last.split('?').first;
+      final localPath = '${dir.path}/${url.hashCode}.$ext';
+      await File(localPath).writeAsBytes(bytes);
+      await DefaultCacheManager().putFile(url, bytes);
+      debugPrint('[_downloadImage] saved to $localPath');
+      if (mounted) {
+        setState(() {
+          _imageLocalPaths[url] = localPath;
+          _downloadingImages.remove(url);
+        });
+      }
+    } catch (e) {
+      debugPrint('[_downloadImage] failed: $e');
+      if (mounted) setState(() => _downloadingImages.remove(url));
+    }
+  }
 
-  void _openImagePreview({String? networkUrl, String? localPath}) {
-    final Widget img = localPath != null
-        ? Image.file(File(localPath), fit: BoxFit.contain)
-        : CachedNetworkImage(
-            imageUrl: networkUrl!,
-            httpHeaders: _authHeaders,
-            fit: BoxFit.contain,
-            placeholder: (_, _) => const Center(
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.brand400),
-            ),
-            errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined,
-                color: AppColors.n300, size: 48),
-          );
+  void _openImagePreview({String? localPath}) {
+    if (localPath == null) return;
+    final Widget img = Image.file(File(localPath), fit: BoxFit.contain);
 
     showDialog<void>(
       context: context,
@@ -413,26 +433,25 @@ class _ConversationScreenState extends State<ConversationScreen> {
     );
   }
 
-  Map<String, String> get _authHeaders {
-    final token = Session.instance.accessToken;
-    if (token == null || token.isEmpty) return const {};
-    return {'Authorization': 'Bearer $token'};
-  }
-
   Future<void> _downloadVoice(String url) async {
-    if (_downloadingVoices.contains(url) || _voiceLocalPaths.containsKey(url)) {
-      return;
-    }
+    if (_downloadingVoices.contains(url) || _voiceLocalPaths.containsKey(url)) return;
     setState(() => _downloadingVoices.add(url));
     try {
-      final file = await DefaultCacheManager().getSingleFile(url, headers: _authHeaders);
+      final bytes = await ApiClient.instance.downloadBytes(url);
+      final dir = await getTemporaryDirectory();
+      final ext = url.split('.').last.split('?').first;
+      final localPath = '${dir.path}/${url.hashCode}.$ext';
+      await File(localPath).writeAsBytes(bytes);
+      await DefaultCacheManager().putFile(url, bytes);
+      debugPrint('[_downloadVoice] saved to $localPath');
       if (mounted) {
         setState(() {
-          _voiceLocalPaths[url] = file.path;
+          _voiceLocalPaths[url] = localPath;
           _downloadingVoices.remove(url);
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[_downloadVoice] failed: $e');
       if (mounted) setState(() => _downloadingVoices.remove(url));
     }
   }
@@ -685,11 +704,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
     return Builder(
       builder: (bubbleCtx) => GestureDetector(
         behavior: HitTestBehavior.opaque,
-        // Images handle their own onTap (preview); use long-press for the menu.
-        onTapDown: m.kind == MessageKind.image
+        // Images and voice handle their own onTap; use long-press for the menu.
+        onTapDown: (m.kind == MessageKind.image || m.kind == MessageKind.voice)
             ? null
             : (_) => _showMessageActions(m, bubbleCtx),
-        onLongPress: m.kind == MessageKind.image
+        onLongPress: (m.kind == MessageKind.image || m.kind == MessageKind.voice)
             ? () => _showMessageActions(m, bubbleCtx)
             : null,
         child: content,
@@ -792,34 +811,38 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
     // Already have a local path → show play/pause
     if (localPath != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: isLocal
-                ? () async {
-                    if (isPlaying) {
-                      await _audioPlayer.pause();
-                      setState(() => _playingVoiceUrl = null);
-                    } else {
-                      await _audioPlayer.stop();
-                      await _audioPlayer.play(DeviceFileSource(localPath));
-                      setState(() => _playingVoiceUrl = url);
-                    }
-                  }
-                : () => _togglePlayVoice(url),
-            child: Icon(
+      Future<void> togglePlay() async {
+        if (isLocal) {
+          if (isPlaying) {
+            await _audioPlayer.pause();
+            setState(() => _playingVoiceUrl = null);
+          } else {
+            await _audioPlayer.stop();
+            await _audioPlayer.play(DeviceFileSource(localPath));
+            setState(() => _playingVoiceUrl = url);
+          }
+        } else {
+          _togglePlayVoice(url);
+        }
+      }
+
+      return GestureDetector(
+        onTap: togglePlay,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
               isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              size: 22,
+              size: 30,
               color: AppColors.brand200,
             ),
-          ),
-          const SizedBox(width: 8),
-          waveform(AppColors.brand300),
-          const SizedBox(width: 8),
-          Text(m.voiceDuration,
-              style: AppText.caption.copyWith(color: AppColors.n200)),
-        ],
+            const SizedBox(width: 8),
+            waveform(AppColors.brand300),
+            const SizedBox(width: 8),
+            Text(m.voiceDuration,
+                style: AppText.caption.copyWith(color: AppColors.n200)),
+          ],
+        ),
       );
     }
 
@@ -866,33 +889,21 @@ class _ConversationScreenState extends State<ConversationScreen> {
       );
     }
 
-    // Remote image already loaded (or cached from a previous session).
-    if (_shownImages.contains(url)) {
+    final localPath = _imageLocalPaths[url];
+    final isDownloading = _downloadingImages.contains(url);
+
+    // Downloaded — show from local file.
+    if (localPath != null) {
       return GestureDetector(
-        onTap: () => _openImagePreview(networkUrl: url),
+        onTap: () => _openImagePreview(localPath: localPath),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: CachedNetworkImage(
-            imageUrl: url,
-            httpHeaders: _authHeaders,
+          child: Image.file(
+            File(localPath),
             width: 200,
             height: 160,
             fit: BoxFit.cover,
-            fadeInDuration: const Duration(milliseconds: 200),
-            placeholder: (_, _) => Container(
-              width: 200,
-              height: 160,
-              color: Colors.white.withValues(alpha: 0.06),
-              child: const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.brand400),
-                ),
-              ),
-            ),
-            errorWidget: (_, _, _) => Container(
+            errorBuilder: (_, _, _) => Container(
               width: 200,
               height: 160,
               color: Colors.white.withValues(alpha: 0.06),
@@ -904,9 +915,28 @@ class _ConversationScreenState extends State<ConversationScreen> {
       );
     }
 
-    // Not yet loaded — show placeholder with download button.
+    // Downloading — show spinner.
+    if (isDownloading) {
+      return Container(
+        width: 200,
+        height: 160,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.brand400),
+          ),
+        ),
+      );
+    }
+
+    // Not yet downloaded — show tap-to-download button.
     return GestureDetector(
-      onTap: () => _showImage(url),
+      onTap: () => _downloadImage(url),
       child: Container(
         width: 200,
         height: 160,

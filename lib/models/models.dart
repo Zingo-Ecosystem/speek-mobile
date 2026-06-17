@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../config/app_config.dart';
 import '../data/api_enums.dart';
 
 /// Whether a person is a native speaker or a learner.
@@ -96,6 +97,13 @@ class SpeekUser {
 
 enum MessageKind { text, voice, callLog, image, document }
 
+/// Relative URL → absolute using AppConfig.apiBaseUrl.
+String _normalizeMediaUrl(String url) {
+  if (url.isEmpty || url.startsWith('http')) return url;
+  final base = AppConfig.apiBaseUrl;
+  return '$base${url.startsWith('/') ? '' : '/'}$url';
+}
+
 @immutable
 class Message {
   final String id;
@@ -143,7 +151,7 @@ class Message {
       outgoing: j['outgoing'] == true,
       kind: ApiEnums.messageKind(j['kind']),
       voiceDuration: dur,
-      mediaUrl: (j['mediaUrl'] ?? '').toString(),
+      mediaUrl: _normalizeMediaUrl((j['mediaUrl'] ?? '').toString()),
       documentName: (j['documentName'] ?? '').toString(),
       time: DateTime.tryParse('${j['createdAtUtc']}')?.toLocal(),
     );

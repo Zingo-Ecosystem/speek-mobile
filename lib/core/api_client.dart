@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
@@ -62,6 +63,30 @@ class ApiClient {
   Future<dynamic> delete(String path) => _send(() => _http
       .delete(_uri(path), headers: _headers(json: false))
       .timeout(AppConfig.httpTimeout));
+
+  /// Downloads raw bytes from [url] with Bearer auth and the standard timeout.
+  /// Throws [ApiException] on non-2xx status.
+  Future<Uint8List> downloadBytes(String url) async {
+    final h = <String, String>{'Accept': '*/*'};
+    final token = Session.instance.accessToken;
+    if (token != null && token.isNotEmpty) h['Authorization'] = 'Bearer $token';
+
+    debugPrint('[ApiClient.downloadBytes] GET $url');
+    http.Response res;
+    try {
+      res = await _http
+          .get(_uri(url), headers: h)
+          .timeout(AppConfig.httpTimeout);
+    } catch (e) {
+      debugPrint('[ApiClient.downloadBytes] error: $e');
+      throw ApiException(0, 'Download failed. Check your connection.', code: 'network');
+    }
+    debugPrint('[ApiClient.downloadBytes] status=${res.statusCode} bytes=${res.bodyBytes.length}');
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return res.bodyBytes;
+    }
+    throw ApiException(res.statusCode, 'Download failed (${res.statusCode})');
+  }
 
   /// Uploads a file via multipart/form-data to [path] (field name "file").
   /// Returns the decoded JSON body.
