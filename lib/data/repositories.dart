@@ -100,15 +100,25 @@ class MapRepository {
     required double lng,
     double radiusKm = 50,
     int limit = 100,
+    int? role,
+    int? maxCefrLevel,
+    String? countryCode,
+    int? goals,
   }) async {
     final j = await _api.get('/Map/nearby', query: {
       'lat': lat,
       'lng': lng,
       'radiusKm': radiusKm,
       'limit': limit,
+      'role': ?role,
+      'maxCefrLevel': ?maxCefrLevel,
+      if (countryCode != null && countryCode.isNotEmpty) 'countryCode': countryCode,
+      if (goals != null && goals != 0) 'goals': goals,
     });
     return _list(j).map(SpeekUser.fromJson).toList();
   }
+
+  Future<void> boost() => _api.post('/Map/boost');
 
   Future<List<ClusterData>> clusters() async {
     final j = await _api.get('/Map/clusters');
@@ -227,6 +237,8 @@ class CallRepository {
   Future<void> decline(String id) => _api.post('/Calls/$id/decline');
   Future<void> cancel(String id) => _api.post('/Calls/$id/cancel');
   Future<void> end(String id) => _api.post('/Calls/$id/end');
+  Future<void> rate(String id, int stars) =>
+      _api.post('/Calls/$id/rate', body: {'stars': stars});
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +312,54 @@ class NotificationRepository {
   Future<void> markRead(String id) => _api.post('/Notifications/$id/read');
 }
 
+// ---------------------------------------------------------------------------
+// Friends
+// ---------------------------------------------------------------------------
+class FriendRepository {
+  final _api = ApiClient.instance;
+
+  Future<List<FriendData>> list() async {
+    final j = await _api.get('/friends');
+    return _list(j).map(FriendData.fromJson).toList();
+  }
+
+  /// Sends a friend request OR accepts one (idempotent).
+  Future<void> addOrAccept(String targetId) =>
+      _api.post('/friends/$targetId');
+
+  /// Removes a friendship or declines a pending request.
+  Future<void> remove(String targetId) =>
+      _api.delete('/friends/$targetId');
+}
+
+// ---------------------------------------------------------------------------
+// Social (likes & views)
+// ---------------------------------------------------------------------------
+class SocialRepository {
+  final _api = ApiClient.instance;
+
+  Future<void> like(String profileId) =>
+      _api.post('/profiles/$profileId/like');
+
+  Future<void> unlike(String profileId) =>
+      _api.delete('/profiles/$profileId/like');
+
+  Future<void> recordView(String profileId) =>
+      _api.post('/profiles/$profileId/view');
+
+  /// Premium required — who liked me.
+  Future<List<SocialUserData>> whoLikedMe() async {
+    final j = await _api.get('/social/likes');
+    return _list(j).map(SocialUserData.fromJson).toList();
+  }
+
+  /// Premium required — who viewed my profile.
+  Future<List<SocialUserData>> whoViewedMe() async {
+    final j = await _api.get('/social/views');
+    return _list(j).map(SocialUserData.fromJson).toList();
+  }
+}
+
 /// Single access point for all repositories.
 class Repos {
   Repos._();
@@ -310,4 +370,6 @@ class Repos {
   static final gamification = GamificationRepository();
   static final subscription = SubscriptionRepository();
   static final notifications = NotificationRepository();
+  static final friends = FriendRepository();
+  static final social = SocialRepository();
 }

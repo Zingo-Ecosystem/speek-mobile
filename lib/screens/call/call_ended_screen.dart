@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories.dart';
 import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/snack.dart';
 
 class CallEndedScreen extends StatefulWidget {
   final SpeekUser user;
   final Duration duration;
-  const CallEndedScreen({super.key, required this.user, this.duration = Duration.zero});
+  final String? callId;
+  const CallEndedScreen({
+    super.key,
+    required this.user,
+    this.duration = Duration.zero,
+    this.callId,
+  });
 
   @override
   State<CallEndedScreen> createState() => _CallEndedScreenState();
@@ -19,6 +27,8 @@ class CallEndedScreen extends StatefulWidget {
 class _CallEndedScreenState extends State<CallEndedScreen> {
   int _rating = 5;
   int _xpEarned = 0;
+  bool _friendAdded = false;
+  bool _busy = false;
 
   String get _durationText {
     final s = widget.duration.inSeconds;
@@ -30,7 +40,6 @@ class _CallEndedScreenState extends State<CallEndedScreen> {
   @override
   void initState() {
     super.initState();
-    _xpEarned = 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -40,6 +49,39 @@ class _CallEndedScreenState extends State<CallEndedScreen> {
         );
       });
     });
+  }
+
+  Future<void> _submitRating() async {
+    final id = widget.callId;
+    if (id == null || id.isEmpty) return;
+    try {
+      await Repos.calls.rate(id, _rating);
+    } catch (_) {}
+  }
+
+  Future<void> _addFriend() async {
+    if (_busy || _friendAdded) return;
+    setState(() => _busy = true);
+    try {
+      await _submitRating();
+      await Repos.friends.addOrAccept(widget.user.id);
+      if (!mounted) return;
+      setState(() {
+        _friendAdded = true;
+        _busy = false;
+      });
+      showSnack(context, 'Friend request sent to ${widget.user.name}!');
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showSnack(context, 'Could not send friend request.', type: SnackType.error);
+    }
+  }
+
+  Future<void> _done() async {
+    await _submitRating();
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -127,11 +169,19 @@ class _CallEndedScreenState extends State<CallEndedScreen> {
                       ],
                     ),
                     const Spacer(flex: 3),
-                    PrimaryButton('💜 Add ${u.name} as friend',
-                        onTap: () => Navigator.of(context).pop()),
+                    _busy
+                        ? const SizedBox(
+                            height: 52,
+                            child: Center(
+                                child: CircularProgressIndicator(strokeWidth: 2)))
+                        : PrimaryButton(
+                            _friendAdded
+                                ? '✓ Friend request sent'
+                                : '💜 Add ${u.name} as friend',
+                            onTap: _friendAdded ? null : _addFriend,
+                          ),
                     const SizedBox(height: 12),
-                    GhostButton('Back to map',
-                        onTap: () => Navigator.of(context).pop()),
+                    GhostButton('Back to map', onTap: _done),
                     const SizedBox(height: 20),
                   ],
                 ),

@@ -14,6 +14,7 @@ import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/snack.dart';
+import 'map_filter_sheet.dart';
 import 'user_preview_sheet.dart';
 
 /// Real interactive world map (OpenStreetMap / CARTO dark tiles).
@@ -32,23 +33,25 @@ class _MapScreenState extends State<MapScreen> {
   double _zoom = 3.2;
   LatLng? _myLocation;
   bool _locating = false;
-  bool _needsLocation = false; // show the "enable location" prompt
+  bool _needsLocation = false;
 
-  // Live data: starts with mock so the map looks alive, replaced by /Map/nearby.
+  // Live data
   List<SpeekUser> _users = List.of(Mock.mapUsers);
   Timer? _heartbeat;
+
+  // Active filters
+  MapFilter _filter = const MapFilter();
+
+  // Boost state
+  bool _boosting = false;
 
   @override
   void initState() {
     super.initState();
-    // Authenticated users see real data immediately (worldwide), then we refine
-    // around their location once we have it. Guests keep the demo map.
     if (Session.instance.isAuthenticated) {
       _users = const [];
       _refreshNearby(_start);
     }
-    // Proactively triggers the OS "Allow location" dialog on entering the map,
-    // but stays quiet (no error toasts) if the user declines.
     WidgetsBinding.instance.addPostFrameCallback((_) => _locateMe(silent: true));
   }
 
@@ -61,15 +64,19 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _refreshNearby(LatLng at) async {
     if (!Session.instance.isAuthenticated) return;
     try {
-      // Pull a wide radius so the map reflects real online speakers worldwide.
-      final users = await Repos.map
-          .nearby(lat: at.latitude, lng: at.longitude, radiusKm: 20000, limit: 200);
+      final users = await Repos.map.nearby(
+        lat: at.latitude,
+        lng: at.longitude,
+        radiusKm: 20000,
+        limit: 200,
+        role: _filter.role,
+        maxCefrLevel: _filter.maxCefrLevel,
+        countryCode: _filter.countryCode.isEmpty ? null : _filter.countryCode,
+        goals: _filter.goals == 0 ? null : _filter.goals,
+      );
 
-      debugPrint('nearby users: ${users.map((e) => '${e.lat} ${e.lng}').first}');
-      
+      debugPrint('nearby users: ${users.length}');
       if (!mounted) return;
-      // Once authenticated we always show real data (even if it's just a few),
-      // never the demo users.
       setState(() => _users = users);
     } catch (_) {}
   }
@@ -84,14 +91,12 @@ class _MapScreenState extends State<MapScreen> {
     _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
       final loc = _myLocation ?? _start;
       Repos.map.heartbeat(loc.latitude, loc.longitude)
-          .then((_) => debugPrint('[Heartbeat] tick sent ${loc.latitude},${loc.longitude}'))
+          .then((_) => debugPrint('[Heartbeat] tick'))
           .catchError((e) => debugPrint('[Heartbeat] tick error: $e'));
       _refreshNearby(loc);
     });
   }
 
-  /// Called from the in-app "Enable location" banner. Re-requests permission,
-  /// or sends the user to Settings if they previously blocked it for good.
   Future<void> _enableLocation() async {
     final perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.deniedForever) {
@@ -117,7 +122,6 @@ class _MapScreenState extends State<MapScreen> {
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
-        // This shows the OS "Allow location" dialog.
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
@@ -161,6 +165,27 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _openFilter() async {
+    final result = await showMapFilter(context, _filter);
+    if (result == null || !mounted) return;
+    setState(() => _filter = result);
+    _refreshNearby(_myLocation ?? _start);
+  }
+
+  Future<void> _boost() async {
+    if (_boosting) return;
+    setState(() => _boosting = true);
+    try {
+      await Repos.map.boost();
+      if (!mounted) return;
+      _toast('Boost active for 2 hours! Your profile appears first on the map.');
+    } catch (_) {
+      if (mounted) _toast('Could not activate boost.', type: SnackType.error);
+    } finally {
+      if (mounted) setState(() => _boosting = false);
+    }
+  }
+
   void _toast(String msg, {SnackType type = SnackType.info}) {
     if (!mounted) return;
     showSnack(context, msg, type: type);
@@ -170,6 +195,7 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final onlineCount = _users.where((u) => u.online).length;
+    final hasFilter = !_filter.isEmpty;
 
     return Scaffold(
       body: Stack(
@@ -182,8 +208,6 @@ class _MapScreenState extends State<MapScreen> {
               minZoom: 2.8,
               maxZoom: 18,
               backgroundColor: AppColors.n900,
-              // Keep the camera inside the world so panning never reveals the
-              // empty (dark) area beyond the map edges.
               cameraConstraint: CameraConstraint.contain(
                 bounds: LatLngBounds(
                   const LatLng(-85, -180),
@@ -192,8 +216,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
               onPositionChanged: (pos, _) => _zoom = pos.zoom,
               interactionOptions: const InteractionOptions(
-                // Explicit gestures: one-finger drag, two-finger pinch zoom &
-                // move, trackpad/wheel zoom, double-tap and fling.
                 flags: InteractiveFlag.drag |
                     InteractiveFlag.pinchZoom |
                     InteractiveFlag.pinchMove |
@@ -214,14 +236,12 @@ class _MapScreenState extends State<MapScreen> {
                 retinaMode: RetinaMode.isHighDensity(context),
                 userAgentPackageName: 'com.speek.app',
                 tileProvider: NetworkTileProvider(),
-                // Lift the very dark CARTO tiles a touch so the map reads as a
-                // softer dark mode instead of near-black.
                 tileBuilder: (context, tileWidget, tile) => ColorFiltered(
                   colorFilter: const ColorFilter.matrix(<double>[
-                    1.18, 0, 0, 0, 22, //
-                    0, 1.18, 0, 0, 22, //
-                    0, 0, 1.18, 0, 26, //
-                    0, 0, 0, 1, 0, //
+                    1.18, 0, 0, 0, 22,
+                    0, 1.18, 0, 0, 22,
+                    0, 0, 1.18, 0, 26,
+                    0, 0, 0, 1, 0,
                   ]),
                   child: tileWidget,
                 ),
@@ -251,8 +271,7 @@ class _MapScreenState extends State<MapScreen> {
               RichAttributionWidget(
                 alignment: AttributionAlignment.bottomRight,
                 attributions: [
-                  TextSourceAttribution('OpenStreetMap',
-                      onTap: () {}),
+                  TextSourceAttribution('OpenStreetMap', onTap: () {}),
                   TextSourceAttribution('CARTO', onTap: () {}),
                 ],
               ),
@@ -268,12 +287,16 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 Expanded(child: _SearchBar()),
                 const SizedBox(width: 10),
-                _glassIcon(Icons.tune_rounded, () {}),
+                _glassIcon(
+                  Icons.tune_rounded,
+                  _openFilter,
+                  active: hasFilter,
+                ),
               ],
             ),
           ),
 
-          // Zoom controls
+          // Zoom controls + boost
           Positioned(
             right: Insets.x4,
             top: topPad + 70,
@@ -284,21 +307,45 @@ class _MapScreenState extends State<MapScreen> {
                 _glassIcon(Icons.remove, () => _zoomBy(-1)),
                 const SizedBox(height: 8),
                 _glassIcon(
-                    _locating ? Icons.hourglass_empty_rounded : Icons.my_location_rounded,
+                    _locating
+                        ? Icons.hourglass_empty_rounded
+                        : Icons.my_location_rounded,
                     _locateMe),
+                const SizedBox(height: 8),
+                _glassIcon(
+                  _boosting ? Icons.hourglass_empty_rounded : Icons.rocket_launch_rounded,
+                  _boost,
+                  tooltip: 'Boost',
+                ),
               ],
             ),
           ),
 
-          // Online count pill — short text, left-aligned and lifted above the
-          // bottom nav so it never sits under the center Map button.
+          // Online count pill
           Positioned(
             left: Insets.x4,
             bottom: 100 + MediaQuery.of(context).padding.bottom,
-            child: Pill('🌐 $onlineCount online'),
+            child: Row(
+              children: [
+                Pill('🌐 $onlineCount online'),
+                if (hasFilter) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() => _filter = const MapFilter());
+                      _refreshNearby(_myLocation ?? _start);
+                    },
+                    child: Pill('✕ Filter active',
+                        bg: AppColors.brand500.withValues(alpha: 0.2),
+                        fg: AppColors.brand200,
+                        border: AppColors.brand500.withValues(alpha: 0.4)),
+                  ),
+                ],
+              ],
+            ),
           ),
 
-          // Location-required prompt — shown until the user enables location.
+          // Location-required prompt
           if (_needsLocation)
             Positioned(
               left: Insets.x4,
@@ -351,19 +398,33 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _glassIcon(IconData icon, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: const Color(0xFF12121A).withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(Radii.md),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-          ),
-          child: Icon(icon, size: 20, color: Colors.white),
+  Widget _glassIcon(IconData icon, VoidCallback onTap,
+      {bool active = false, String? tooltip}) {
+    final child = GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.brand500.withValues(alpha: 0.25)
+              : const Color(0xFF12121A).withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(Radii.md),
+          border: Border.all(
+              color: active
+                  ? AppColors.brand500.withValues(alpha: 0.6)
+                  : Colors.white.withValues(alpha: 0.1)),
         ),
-      );
+        child: Icon(icon,
+            size: 20,
+            color: active ? AppColors.brand200 : Colors.white),
+      ),
+    );
+    if (tooltip != null) {
+      return Tooltip(message: tooltip, child: child);
+    }
+    return child;
+  }
 }
 
 class _SearchBar extends StatelessWidget {
@@ -397,7 +458,6 @@ class _UserMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // In a call → green ring + phone badge (stays visible, not removed).
     final ringColor = user.inCall
         ? AppColors.success
         : user.online
@@ -445,7 +505,6 @@ class _UserMarker extends StatelessWidget {
                 ),
             ],
           ),
-          // pointer
           Transform.translate(
             offset: const Offset(0, -3),
             child: CustomPaint(

@@ -203,7 +203,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _roomListener?.dispose();
     CallService.instance.end();
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => CallEndedScreen(user: widget.user, duration: _elapsed)),
+      MaterialPageRoute(builder: (_) => CallEndedScreen(user: widget.user, duration: _elapsed, callId: _callId)),
       (route) => route.isFirst,
     );
   }
@@ -281,7 +281,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _roomListener?.dispose();
     CallService.instance.end();
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => CallEndedScreen(user: widget.user, duration: _elapsed)),
+      MaterialPageRoute(builder: (_) => CallEndedScreen(user: widget.user, duration: _elapsed, callId: _callId)),
       (route) => route.isFirst,
     );
   }

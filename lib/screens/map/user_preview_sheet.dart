@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/repositories.dart';
 import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/snack.dart';
 import '../call/incoming_call_screen.dart';
 import '../chat/conversation_screen.dart';
 import 'register_gate_sheet.dart';
@@ -84,33 +86,94 @@ Widget _previewFallback(SpeekUser user) => SizedBox(
       ),
     );
 
-class _UserPreviewSheet extends StatelessWidget {
+class _UserPreviewSheet extends StatefulWidget {
   final SpeekUser user;
   const _UserPreviewSheet({required this.user});
+
+  @override
+  State<_UserPreviewSheet> createState() => _UserPreviewSheetState();
+}
+
+class _UserPreviewSheetState extends State<_UserPreviewSheet> {
+  bool _liked = false;
+  bool _friendSent = false;
+  bool _likeLoading = false;
+  bool _friendLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-record profile view (fire-and-forget, no UI feedback needed).
+    if (AppState.instance.isRegistered) {
+      Repos.social.recordView(widget.user.id).catchError((_) {});
+    }
+  }
 
   void _call(BuildContext context) {
     final nav = Navigator.of(context);
     nav.pop();
     if (!AppState.instance.isRegistered) {
-      showRegisterGate(context, user);
+      showRegisterGate(context, widget.user);
     } else {
       nav.push(MaterialPageRoute(
-          builder: (_) => IncomingCallScreen(user: user)));
+          builder: (_) => IncomingCallScreen(user: widget.user)));
     }
   }
 
   void _message(BuildContext context) {
     Navigator.of(context).pop();
     if (!AppState.instance.isRegistered) {
-      showRegisterGate(context, user);
+      showRegisterGate(context, widget.user);
     } else {
       Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ConversationScreen(user: user)));
+          builder: (_) => ConversationScreen(user: widget.user)));
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (!AppState.instance.isRegistered) return;
+    if (_likeLoading) return;
+    setState(() => _likeLoading = true);
+    try {
+      if (_liked) {
+        await Repos.social.unlike(widget.user.id);
+      } else {
+        await Repos.social.like(widget.user.id);
+      }
+      if (mounted) setState(() => _liked = !_liked);
+    } catch (_) {
+      if (mounted) {
+        showSnack(context, 'Could not update like.', type: SnackType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _likeLoading = false);
+    }
+  }
+
+  Future<void> _addFriend() async {
+    if (!AppState.instance.isRegistered) return;
+    if (_friendLoading || _friendSent) return;
+    setState(() => _friendLoading = true);
+    try {
+      await Repos.friends.addOrAccept(widget.user.id);
+      if (mounted) {
+        setState(() {
+          _friendSent = true;
+          _friendLoading = false;
+        });
+        showSnack(context, 'Friend request sent to ${widget.user.name}!');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _friendLoading = false);
+        showSnack(context, 'Could not send friend request.', type: SnackType.error);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     final subtitle = user.role == SpeakerRole.native
         ? 'Native speaker · ${user.city} · ${user.distanceKm} km away'
         : 'Learner · ${user.city} · ${user.level}';
@@ -169,6 +232,37 @@ class _UserPreviewSheet extends StatelessWidget {
                               fg: const Color(0xFF042204),
                               border: Colors.transparent),
                         ),
+                      // Like button overlay
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: GestureDetector(
+                          onTap: _toggleLike,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: _likeLoading
+                                ? const Padding(
+                                    padding: EdgeInsets.all(10),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: Colors.white))
+                                : Icon(
+                                    _liked
+                                        ? Icons.favorite_rounded
+                                        : Icons.favorite_border_rounded,
+                                    color: _liked
+                                        ? AppColors.like
+                                        : Colors.white,
+                                    size: 20,
+                                  ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -208,7 +302,7 @@ class _UserPreviewSheet extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Text('“${user.bio}”', style: AppText.body),
+                      Text('"${user.bio}"', style: AppText.body),
                       const SizedBox(height: 14),
                       Wrap(
                         spacing: 7,
@@ -218,6 +312,16 @@ class _UserPreviewSheet extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 18),
+                      // Add friend button
+                      GhostButton(
+                        _friendSent
+                            ? '✓ Friend request sent'
+                            : _friendLoading
+                                ? 'Sending...'
+                                : '👤 Add friend',
+                        onTap: (_friendSent || _friendLoading) ? null : _addFriend,
+                      ),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(

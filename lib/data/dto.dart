@@ -187,6 +187,69 @@ class CallData {
       );
 }
 
+/// Mirrors `FriendshipDto`.
+class FriendData {
+  final String userId;
+  final String name;
+  final String photoUrl;
+  final String flag;
+  final String country;
+  // 0 = Pending, 1 = Accepted
+  final int status;
+  final bool isSentByMe;
+
+  FriendData({
+    required this.userId,
+    required this.name,
+    required this.photoUrl,
+    required this.flag,
+    required this.country,
+    required this.status,
+    required this.isSentByMe,
+  });
+
+  bool get isPending => status == 0;
+  bool get isAccepted => status == 1;
+
+  factory FriendData.fromJson(Map<String, dynamic> j) => FriendData(
+        userId: _s(j['userId']),
+        name: _s(j['name'], 'Speeker'),
+        photoUrl: _s(j['photoUrl']),
+        flag: _s(j['flag']),
+        country: _s(j['countryName']),
+        status: _i(j['status']),
+        isSentByMe: j['isSentByMe'] == true,
+      );
+}
+
+/// Mirrors `SocialUserDto` (liked/viewed me entries).
+class SocialUserData {
+  final String userId;
+  final String name;
+  final String photoUrl;
+  final String flag;
+  final String country;
+  final DateTime? at;
+
+  SocialUserData({
+    required this.userId,
+    required this.name,
+    required this.photoUrl,
+    required this.flag,
+    required this.country,
+    required this.at,
+  });
+
+  factory SocialUserData.fromJson(Map<String, dynamic> j) => SocialUserData(
+        userId: _s(j['userId']),
+        name: _s(j['name'], 'Speeker'),
+        photoUrl: _s(j['photoUrl']),
+        flag: _s(j['flag']),
+        country: _s(j['countryName']),
+        at: DateTime.tryParse('${j['likedAtUtc'] ?? j['viewedAtUtc']}')?.toLocal(),
+      );
+}
+
 /// Mirrors `CountryClusterDto`.
 class ClusterData {
   final String countryCode, flag, name;

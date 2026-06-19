@@ -8,6 +8,8 @@ import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
 import '../settings/referral_screen.dart';
 import '../settings/settings_screen.dart';
+import '../social/friends_screen.dart';
+import '../social/social_screen.dart';
 import '../subscription/manage_subscription_screen.dart';
 import '../subscription/paywall_screen.dart';
 import 'badge_gallery_screen.dart';
@@ -189,6 +191,12 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
 
+                  _row(context, Icons.people_outline_rounded, 'Friends',
+                      () => _push(context, const FriendsScreen())),
+                  _row(context, Icons.favorite_outline_rounded,
+                      'Who liked & viewed me',
+                      () => _push(context, const SocialScreen()),
+                      trailing: s.isPremium ? null : '👑'),
                   _row(context, Icons.help_outline_rounded,
                       'How XP & streaks work',
                       () => showHowItWorks(context)),
