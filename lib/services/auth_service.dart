@@ -53,6 +53,31 @@ class AuthService {
     return _exchange(provider: 0, idToken: idToken, referralCode: referralCode);
   }
 
+  // ---- Passwordless email ----
+
+  /// Step 1: ask the backend to email a 6-digit sign-in code.
+  Future<void> requestEmailCode(String email) async {
+    await _api.post('/Auth/email/request', body: {'email': email.trim()});
+  }
+
+  /// Step 2: verify the code and exchange it for a Speek session.
+  Future<AuthResult> verifyEmailCode(String email, String code,
+      {String? referralCode}) async {
+    final j = await _api.post('/Auth/email/verify', body: {
+      'email': email.trim(),
+      'code': code.trim(),
+      'referralCode': referralCode,
+    });
+    final map = (j as Map).cast<String, dynamic>();
+    final user = SpeekUser.fromJson((map['user'] as Map).cast());
+    await Session.instance.save(
+      accessToken: '${map['accessToken']}',
+      refreshToken: '${map['refreshToken'] ?? ''}',
+      userId: user.id,
+    );
+    return AuthResult(user, map['isNewUser'] == true);
+  }
+
   /// Apple → backend.
   Future<AuthResult> signInWithApple({String? referralCode}) async {
     final cred = await SignInWithApple.getAppleIDCredential(

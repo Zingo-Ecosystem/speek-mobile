@@ -23,18 +23,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
   List<Chat> _all = const [];
   bool _loaded = false;
   StreamSubscription? _msgSub;
+  StreamSubscription? _inviteSub;
 
   @override
   void initState() {
     super.initState();
     _load();
-    // Refresh the list whenever a realtime message arrives.
+    // Refresh the list whenever a realtime message or invite arrives.
     _msgSub = RealtimeService.instance.onMessage.listen((_) => _load());
+    _inviteSub = RealtimeService.instance.onInvite.listen((_) => _load());
   }
 
   @override
   void dispose() {
     _msgSub?.cancel();
+    _inviteSub?.cancel();
     super.dispose();
   }
 
@@ -98,7 +101,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             else if (chats.isEmpty)
               _emptyState()
             else
-              for (final c in chats) _ChatRow(chat: c),
+              for (final c in chats) _ChatRow(chat: c, onReturn: _load),
           ],
         ),
       ),
@@ -259,20 +262,24 @@ class _RequestCardState extends State<_RequestCard> {
 
 class _ChatRow extends StatelessWidget {
   final Chat chat;
-  const _ChatRow({required this.chat});
+  final VoidCallback onReturn;
+  const _ChatRow({required this.chat, required this.onReturn});
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () {
+      onTap: () async {
         // Start fetching messages immediately on tap so they arrive during
         // the navigation animation rather than after the screen appears.
         final prefetch = Repos.chat.messages(chat.id);
-        Navigator.of(context).push(MaterialPageRoute(
+        await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => ConversationScreen(
                   user: chat.user,
                   conversationId: chat.id,
                   prefetch: prefetch,
                 )));
+        // Returning from the chat: the messages were marked read there, so
+        // refresh to clear the unread badge.
+        onReturn();
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 11),

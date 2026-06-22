@@ -30,6 +30,10 @@ class SpeekUser {
   final bool inCall;
   final DateTime? callStartedAt;
 
+  /// Set when an *accepted* conversation already exists with this user — i.e.
+  /// you're connected and may chat/call. Null means you must invite first.
+  final String? conversationId;
+
   const SpeekUser({
     required this.id,
     required this.name,
@@ -51,7 +55,12 @@ class SpeekUser {
     this.isOnboarded = true,
     this.inCall = false,
     this.callStartedAt,
+    this.conversationId,
   });
+
+  /// True when an accepted conversation exists — chatting/calling is allowed.
+  bool get isConnected =>
+      conversationId != null && conversationId!.isNotEmpty;
 
   String get roleLabel => role == SpeakerRole.native ? 'Native' : 'Learner';
 
@@ -91,11 +100,13 @@ class SpeekUser {
       isOnboarded: j['isOnboarded'] == true,
       inCall: j['inCall'] == true,
       callStartedAt: DateTime.tryParse('${j['callStartedAtUtc']}')?.toLocal(),
+      conversationId:
+          j['conversationId'] == null ? null : '${j['conversationId']}',
     );
   }
 }
 
-enum MessageKind { text, voice, callLog, image, document }
+enum MessageKind { text, voice, callLog, image, document, invite }
 
 /// Relative URL → absolute using AppConfig.apiBaseUrl.
 String _normalizeMediaUrl(String url) {

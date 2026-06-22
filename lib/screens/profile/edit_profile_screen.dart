@@ -53,7 +53,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
       if (picked == null) return;
       setState(() => _uploadingPhoto = true);
-      final err = await _s.updatePhoto(picked.path);
+      final bytes = await picked.readAsBytes();
+      final err = await _s.updatePhoto(bytes, picked.name);
       if (!mounted) return;
       setState(() => _uploadingPhoto = false);
       showSnack(context, err ?? 'Photo updated',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -6,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
 import '../../core/session.dart';
+import '../../state/app_state.dart';
 import '../../data/mock_data.dart';
 import '../../data/repositories.dart';
 import '../../models/models.dart';
@@ -345,54 +347,9 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Location-required prompt
+          // Creative full-screen location gate.
           if (_needsLocation)
-            Positioned(
-              left: Insets.x4,
-              right: Insets.x4,
-              bottom: 150 + MediaQuery.of(context).padding.bottom,
-              child: GestureDetector(
-                onTap: _enableLocation,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.grad,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                          color: AppColors.brand500.withValues(alpha: 0.4),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8)),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.location_on_rounded,
-                          color: Colors.white, size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Enable location',
-                                style: AppText.label
-                                    .copyWith(color: Colors.white)),
-                            const SizedBox(height: 2),
-                            Text('So people can find you on the map',
-                                style: AppText.caption.copyWith(
-                                    color: Colors.white
-                                        .withValues(alpha: 0.85),
-                                    fontSize: 11.5)),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right, color: Colors.white),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _LocationGate(onEnable: _enableLocation, busy: _locating),
         ],
       ),
     );
@@ -450,6 +407,137 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
+/// Full-screen, premium location-permission gate with an animated radar pulse.
+/// Replaces the OS-default-feeling banner with a branded, creative moment.
+class _LocationGate extends StatefulWidget {
+  final VoidCallback onEnable;
+  final bool busy;
+  const _LocationGate({required this.onEnable, required this.busy});
+
+  @override
+  State<_LocationGate> createState() => _LocationGateState();
+}
+
+class _LocationGateState extends State<_LocationGate>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(seconds: 3))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            color: AppColors.n900.withValues(alpha: 0.82),
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Animated radar
+                SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: AnimatedBuilder(
+                    animation: _c,
+                    builder: (_, __) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          for (int i = 0; i < 3; i++)
+                            _ring((_c.value + i / 3) % 1),
+                          Container(
+                            width: 84,
+                            height: 84,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: AppColors.grad,
+                              boxShadow: [
+                                BoxShadow(
+                                    color: AppColors.brand500
+                                        .withValues(alpha: 0.6),
+                                    blurRadius: 34,
+                                    offset: const Offset(0, 12)),
+                              ],
+                            ),
+                            child: const Icon(Icons.explore_rounded,
+                                color: Colors.white, size: 42),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 36),
+                Text('Turn on your radar',
+                    textAlign: TextAlign.center, style: AppText.h1),
+                const SizedBox(height: 12),
+                Text(
+                  'Speek uses your location to put you on the live map and '
+                  'find speakers near you. Your exact spot is never shared.',
+                  textAlign: TextAlign.center,
+                  style: AppText.bodyMuted,
+                ),
+                const SizedBox(height: 22),
+                _perk(Icons.public_rounded, 'Appear on the global live map'),
+                const SizedBox(height: 10),
+                _perk(Icons.bolt_rounded, 'Discover people online right now'),
+                const SizedBox(height: 10),
+                _perk(Icons.lock_outline_rounded, 'Private — only your region shows'),
+                const SizedBox(height: 32),
+                PrimaryButton(
+                  widget.busy ? 'Enabling…' : '📍 Enable location',
+                  onTap: widget.busy ? null : widget.onEnable,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _ring(double t) {
+    final size = 84 + t * 116;
+    return Opacity(
+      opacity: (1 - t) * 0.6,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+              color: AppColors.brand400.withValues(alpha: 0.7), width: 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _perk(IconData icon, String text) => Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AppColors.brand500.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.brand300),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: AppText.body)),
+        ],
+      );
+}
+
 /// Avatar marker with online dot and a small pointer below.
 class _UserMarker extends StatelessWidget {
   final SpeekUser user;
@@ -485,8 +573,21 @@ class _UserMarker extends StatelessWidget {
                           blurRadius: 12),
                   ],
                 ),
-                child: Avatar(user.photoUrl,
-                    size: 40, online: user.online && !user.inCall, name: user.name),
+                child: ClipOval(
+                  child: AppState.instance.isPremium
+                      ? Avatar(user.photoUrl,
+                          size: 40,
+                          online: user.online && !user.inCall,
+                          name: user.name)
+                      : ImageFiltered(
+                          imageFilter:
+                              ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                          child: Avatar(user.photoUrl,
+                              size: 40,
+                              online: user.online && !user.inCall,
+                              name: user.name),
+                        ),
+                ),
               ),
               if (user.inCall)
                 Positioned(

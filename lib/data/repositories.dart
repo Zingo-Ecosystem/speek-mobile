@@ -77,6 +77,13 @@ class ProfileRepository {
     return (j['url'] ?? '').toString();
   }
 
+  /// Cross-platform image upload from raw bytes (use on web).
+  Future<String> uploadImageBytes(List<int> bytes, String filename) async {
+    final j = await _api.uploadBytes('/Upload', bytes, filename);
+    if (j is! Map) throw ApiException(0, 'Unexpected upload response.');
+    return (j['url'] ?? '').toString();
+  }
+
   /// Sets the uploaded URL as the user's primary avatar.
   Future<SpeekUser> setPhoto(String url) async {
     final j = await _api.post('/Profile/photo', body: {'url': url});
@@ -212,6 +219,20 @@ class ChatRepository {
 
   Future<void> decline(String conversationId) =>
       _api.post('/Chat/conversations/$conversationId/decline');
+
+  /// Invites an online user (from the map) to practice. [mode] is the suggested
+  /// medium: null = chat, 0 = voice, 1 = video. Returns the conversation ID.
+  Future<String> invite(String peerId, {int? mode, String? note}) async {
+    final j = await _api.post('/Chat/invite', body: {
+      'peerId': peerId,
+      if (mode != null) 'mode': mode,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+    if (j is Map && j['conversationId'] != null) {
+      return j['conversationId'].toString();
+    }
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------

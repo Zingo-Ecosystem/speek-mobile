@@ -6,6 +6,7 @@ import '../core/api_exception.dart';
 import '../core/session.dart';
 import '../data/dto.dart';
 import '../data/repositories.dart';
+import '../data/api_enums.dart';
 import '../models/models.dart';
 import '../realtime/realtime_service.dart';
 import '../services/auth_service.dart';
@@ -65,6 +66,20 @@ class AppState extends ChangeNotifier {
 
   /// Photos uploaded during the onboarding wizard (first = main avatar).
   final List<String> onboardingPhotoUrls = [];
+
+  /// Goals picked in onboarding. Indexes: 0 = Speaking, 1 = Network, 2 = Explore.
+  /// Drives the personalized A→Z journey reveal.
+  final Set<int> onboardingGoals = {0};
+
+  /// Selected goals as the backend UserGoals bitmask
+  /// (SpeakingPractice=1, Friendship=2). Defaults to SpeakingPractice.
+  int get goalsBitmask {
+    var mask = 0;
+    if (onboardingGoals.contains(0)) mask |= 1; // Speaking → SpeakingPractice
+    if (onboardingGoals.contains(1)) mask |= 2; // Network → Friendship
+    if (onboardingGoals.contains(2)) mask |= 1; // Explore → cultural speaking
+    return mask == 0 ? 1 : mask;
+  }
 
   String get flag => country.split(' ').first;
   String get photoUrl =>
@@ -330,16 +345,49 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Persists the completed onboarding wizard to the backend, then marks the
+  /// user registered. Best-effort — never throws so the UI flow continues.
+  Future<void> submitOnboarding() async {
+    final parts = country.trim().split(' ');
+    final flag = parts.isNotEmpty ? parts.first : '';
+    final countryName = parts.length > 1 ? parts.sublist(1).join(' ') : country;
+    try {
+      await Repos.profile.completeOnboarding({
+        'name': name,
+        'age': age,
+        'gender': gender,
+        'countryCode': countryCode,
+        'countryName': countryName,
+        'flag': flag,
+        'city': city,
+        'role': ApiEnums.roleToInt(
+            isLearner ? SpeakerRole.learner : SpeakerRole.native),
+        'englishLevel': ApiEnums.cefrToInt(level),
+        'bio': bio,
+        'goals': goalsBitmask,
+        'interests': interests,
+        'photoUrls': onboardingPhotoUrls,
+        'languages': const <Map<String, dynamic>>[],
+      });
+      isOnboarded = true;
+      await hydrate();
+    } catch (_) {
+      isOnboarded = true;
+    }
+    register();
+  }
+
   /// Uploads a photo during onboarding (no profile set yet). Returns the hosted
-  /// URL on success, or throws — the caller surfaces the error.
-  Future<String> uploadOnboardingPhoto(String filePath) =>
-      Repos.profile.uploadImage(filePath);
+  /// URL on success, or throws — the caller surfaces the error. Bytes-based so
+  /// it works on web as well as native.
+  Future<String> uploadOnboardingPhoto(List<int> bytes, String filename) =>
+      Repos.profile.uploadImageBytes(bytes, filename);
 
   /// Uploads a picked image and sets it as the avatar.
   /// Returns null on success, or a human-readable error message.
-  Future<String?> updatePhoto(String filePath) async {
+  Future<String?> updatePhoto(List<int> bytes, String filename) async {
     try {
-      final url = await Repos.profile.uploadImage(filePath);
+      final url = await Repos.profile.uploadImageBytes(bytes, filename);
       if (url.isEmpty) return 'Upload returned no URL.';
       currentUser = await Repos.profile.setPhoto(url);
       notifyListeners();

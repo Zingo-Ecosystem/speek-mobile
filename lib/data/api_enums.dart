@@ -26,7 +26,7 @@ class ApiEnums {
     return i < 0 ? 0 : i;
   }
 
-  // MessageKind: Text=0, Voice=1, CallLog=2, Image=3, Document=4
+  // MessageKind: Text=0, Voice=1, CallLog=2, Image=3, Document=4, Invite=5
   static MessageKind messageKind(dynamic v) {
     switch (v is int ? v : int.tryParse('$v') ?? 0) {
       case 1:
@@ -37,6 +37,8 @@ class ApiEnums {
         return MessageKind.image;
       case 4:
         return MessageKind.document;
+      case 5:
+        return MessageKind.invite;
       default:
         return MessageKind.text;
     }
@@ -52,6 +54,8 @@ class ApiEnums {
         return 3;
       case MessageKind.document:
         return 4;
+      case MessageKind.invite:
+        return 5;
       case MessageKind.text:
         return 0;
     }

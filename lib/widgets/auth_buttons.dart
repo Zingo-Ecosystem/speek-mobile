@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/api_exception.dart';
@@ -6,6 +7,7 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import 'common.dart';
+import 'email_auth_sheet.dart';
 import 'snack.dart';
 
 /// Google / Apple sign-in buttons. They run the real social-login flow against
@@ -57,28 +59,48 @@ class _AuthButtonsState extends State<AuthButtons> {
     }
   }
 
+  /// Opens the email sheet, then applies the returned session like a social login.
+  Future<void> _email() async {
+    if (_busy) return;
+    final res = await showEmailAuthSheet(context, referralCode: widget.referralCode);
+    if (res == null || !mounted) return;
+    await _run(() => Future.value(res));
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Platform-specific providers: Apple is required on iOS and is not offered
+    // on Android; Google is offered on Android (and other platforms). Email is
+    // available everywhere.
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+
     return Stack(
       alignment: Alignment.center,
       children: [
         Column(
           children: [
-            GhostButton('Continue with Google',
-                light: true,
-                onTap: _busy
-                    ? null
-                    : () => _run(() => AuthService.instance
-                        .signInWithGoogle(referralCode: widget.referralCode)),
-                leading: const _GoogleG()),
+            if (isIOS)
+              GhostButton('Continue with Apple',
+                  dark: true,
+                  onTap: _busy
+                      ? null
+                      : () => _run(() => AuthService.instance
+                          .signInWithApple(referralCode: widget.referralCode)),
+                  leading:
+                      const Icon(Icons.apple, color: Colors.white, size: 22))
+            else
+              GhostButton('Continue with Google',
+                  light: true,
+                  onTap: _busy
+                      ? null
+                      : () => _run(() => AuthService.instance
+                          .signInWithGoogle(referralCode: widget.referralCode)),
+                  leading: const _GoogleG()),
             const SizedBox(height: 12),
-            GhostButton('Continue with Apple',
-                dark: true,
-                onTap: _busy
-                    ? null
-                    : () => _run(() => AuthService.instance
-                        .signInWithApple(referralCode: widget.referralCode)),
-                leading: const Icon(Icons.apple, color: Colors.white, size: 22)),
+            GhostButton('Continue with email',
+                onTap: _busy ? null : _email,
+                leading: const Icon(Icons.mail_outline_rounded,
+                    color: Colors.white, size: 21)),
           ],
         ),
         if (_busy)

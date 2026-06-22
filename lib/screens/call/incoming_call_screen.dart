@@ -149,13 +149,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                     child: _calling
                         ? Text(
                             key: const ValueKey('ringing'),
-                            'Chaqirilmoqda…',
+                            'Calling…',
                             style: AppText.body.copyWith(
                                 color: Colors.white.withValues(alpha: 0.8)),
                           )
                         : Text(
                             key: const ValueKey('start'),
-                            'Qo\'ng\'iroq turini tanlang',
+                            'Choose call type',
                             style: AppText.body.copyWith(
                                 color: Colors.white.withValues(alpha: 0.8)),
                           ),
@@ -174,7 +174,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                     child: _calling
                         ? CallControl(
                             icon: Icons.call_end_rounded,
-                            label: 'Bekor qilish',
+                            label: 'Cancel',
                             variant: CallControlVariant.end,
                             onTap: _cancel,
                           )
@@ -183,7 +183,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                             children: [
                               CallControl(
                                 icon: Icons.close,
-                                label: 'Orqaga',
+                                label: 'Back',
                                 variant: CallControlVariant.end,
                                 onTap: () => Navigator.of(context).pop(),
                               ),
@@ -196,7 +196,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                               ),
                               CallControl(
                                 icon: Icons.call,
-                                label: 'Ovoz',
+                                label: 'Voice',
                                 variant: CallControlVariant.accept,
                                 onTap: _busy
                                     ? null

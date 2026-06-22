@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../data/api_enums.dart';
-import '../../data/repositories.dart';
-import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/snack.dart';
-import 'trial_started_screen.dart';
+import 'goal_journey_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
   const CreateAccountScreen({super.key});
@@ -24,8 +21,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   int _step = 0;
   static const _total = 4;
 
-  bool _submitting = false;
-
   Future<void> _next() async {
     // Require at least one uploaded photo before leaving the photos step.
     if (_step == 0 && AppState.instance.onboardingPhotoUrls.isEmpty) {
@@ -38,44 +33,15 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
       return;
     }
-    if (_submitting) return;
-    setState(() => _submitting = true);
-
-    final s = AppState.instance;
-    final parts = s.country.trim().split(' ');
-    final flag = parts.isNotEmpty ? parts.first : '';
-    final countryName = parts.length > 1 ? parts.sublist(1).join(' ') : s.country;
-
-    // Persist onboarding to the backend (best-effort — never block the user).
-    try {
-      await Repos.profile.completeOnboarding({
-        'name': s.name,
-        'age': s.age,
-        'gender': s.gender,
-        'countryCode': s.countryCode,
-        'countryName': countryName,
-        'flag': flag,
-        'city': s.city,
-        'role': ApiEnums.roleToInt(
-            s.isLearner ? SpeakerRole.learner : SpeakerRole.native),
-        'englishLevel': ApiEnums.cefrToInt(s.level),
-        'bio': s.bio,
-        'goals': 3, // SpeakingPractice | Friendship
-        'interests': s.interests,
-        'photoUrls': s.onboardingPhotoUrls,
-        'languages': const <Map<String, dynamic>>[],
-      });
-      s.isOnboarded = true;
-      await s.hydrate();
-    } catch (_) {
-      s.isOnboarded = true;
+    if (AppState.instance.onboardingGoals.isEmpty) {
+      showSnack(context, 'Pick at least one goal to continue.',
+          type: SnackType.error);
+      return;
     }
-
-    s.register();
-    s.startTrial();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TrialStartedScreen()));
+    // Reveal the personalized A→Z journey for the chosen goals. The journey
+    // screen finalizes onboarding + the trial when the user commits.
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const GoalJourneyScreen()));
   }
 
   void _back() {
@@ -189,7 +155,9 @@ class _PhotosStepState extends State<_PhotosStep> {
       );
       if (picked == null) return;
       setState(() => _busy.add(slot));
-      final url = await AppState.instance.uploadOnboardingPhoto(picked.path);
+      final bytes = await picked.readAsBytes();
+      final url = await AppState.instance
+          .uploadOnboardingPhoto(bytes, picked.name);
       if (!mounted) return;
       setState(() {
         _busy.remove(slot);
@@ -348,7 +316,7 @@ class _BasicsStepState extends State<_BasicsStep> {
       children: [
         Text('The basics', style: AppText.h2),
         const SizedBox(height: 6),
-        Text('This helps us match you with the right people.',
+        Text('This helps us connect you with the right speakers.',
             style: AppText.smMuted),
         const SizedBox(height: 18),
         _TextField(label: 'First name', controller: _name, hint: 'Your name'),
@@ -469,7 +437,7 @@ class _InterestsStepState extends State<_InterestsStep> {
       children: [
         Text('What are you into?', style: AppText.h2),
         const SizedBox(height: 6),
-        Text('Pick at least 3 — we match on shared interests.',
+        Text('Pick at least 3 — great conversations start here.',
             style: AppText.smMuted),
         const SizedBox(height: 18),
         Wrap(
@@ -511,11 +479,11 @@ class _GoalsStep extends StatefulWidget {
 }
 
 class _GoalsStepState extends State<_GoalsStep> {
-  final _on = {0, 1};
+  Set<int> get _on => AppState.instance.onboardingGoals;
   final _goals = const [
-    ('🗣', 'Speaking practice', 'Improve fluency with real talks'),
-    ('🤝', 'Friendship', 'Meet people around the world'),
-    ('💜', 'Dating', 'Open to something more'),
+    ('🚀', 'Level up my speaking', 'Practice with natives, become fluent'),
+    ('🤝', 'Grow my network', 'Meet people & professionals worldwide'),
+    ('🌍', 'Explore cultures', 'Learn how the world really talks'),
   ];
 
   @override
@@ -523,9 +491,10 @@ class _GoalsStepState extends State<_GoalsStep> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(Insets.x6, Insets.x5, Insets.x6, Insets.x6),
       children: [
-        Text('What are you looking for?', style: AppText.h2),
+        Text('Why are you here?', style: AppText.h2),
         const SizedBox(height: 6),
-        Text('Be honest — it shapes who you meet.', style: AppText.smMuted),
+        Text('Pick what matters to you — it shapes your experience.',
+            style: AppText.smMuted),
         const SizedBox(height: 18),
         for (int i = 0; i < _goals.length; i++) ...[
           _goalTile(i),

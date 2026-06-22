@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../data/dto.dart';
 import '../../data/repositories.dart';
@@ -28,22 +29,44 @@ class IncomingRingScreen extends StatefulWidget {
 class _IncomingRingScreenState extends State<IncomingRingScreen> {
   bool _busy = false;
   StreamSubscription? _stateSub;
+  Timer? _ringTimer;
 
   @override
   void initState() {
     super.initState();
+    _startRinging();
     final myCallId = widget.call.id;
-    if (myCallId.isEmpty) return; // ID kelmasa, noto'g'ri yopilishdan himoya
+    if (myCallId.isEmpty) return; // guard against closing on a missing id
     _stateSub = RealtimeService.instance.onCallState.listen((c) {
       debugPrint('[IncomingRingScreen] callState id=${c.id} status=${c.status} myId=$myCallId');
       if (c.id == myCallId && c.status >= 3 && mounted) {
+        _stopRinging();
         Navigator.of(context).pop();
       }
     });
   }
 
+  /// Rings the device: a pulsing vibration + alert tone every ~1.4s until the
+  /// call is answered, declined or cancelled. Uses platform haptics/sounds so
+  /// no audio asset or extra plugin is needed (no-op on web).
+  void _startRinging() {
+    void pulse() {
+      HapticFeedback.heavyImpact();
+      SystemSound.play(SystemSoundType.alert);
+    }
+
+    pulse();
+    _ringTimer = Timer.periodic(const Duration(milliseconds: 1400), (_) => pulse());
+  }
+
+  void _stopRinging() {
+    _ringTimer?.cancel();
+    _ringTimer = null;
+  }
+
   @override
   void dispose() {
+    _stopRinging();
     _stateSub?.cancel();
     super.dispose();
   }
@@ -64,7 +87,8 @@ class _IncomingRingScreenState extends State<IncomingRingScreen> {
   Future<void> _accept() async {
     if (_busy) return;
     setState(() => _busy = true);
-    _stateSub?.cancel(); // accept jarayonida callState pop qilmasligi uchun
+    _stopRinging();
+    _stateSub?.cancel(); // don't let a callState event pop us mid-accept
     CallData call = widget.call;
     try {
       call = await Repos.calls.accept(widget.call.id);
@@ -85,6 +109,7 @@ class _IncomingRingScreenState extends State<IncomingRingScreen> {
   Future<void> _decline() async {
     if (_busy) return;
     setState(() => _busy = true);
+    _stopRinging();
     _stateSub?.cancel();
     await CallService.instance.decline(widget.call.id);
     if (mounted) Navigator.of(context).pop();

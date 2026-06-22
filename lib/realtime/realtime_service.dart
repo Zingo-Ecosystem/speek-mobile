@@ -36,12 +36,14 @@ class RealtimeService {
   final _callStates = StreamController<CallData>.broadcast();
   final _notifications = StreamController<AppNotification>.broadcast();
   final _typing = StreamController<TypingEvent>.broadcast();
+  final _invites = StreamController<InviteEvent>.broadcast();
 
   Stream<Message> get onMessage => _messages.stream;
   Stream<CallData> get onIncomingCall => _incomingCalls.stream;
   Stream<CallData> get onCallState => _callStates.stream;
   Stream<AppNotification> get onNotification => _notifications.stream;
   Stream<TypingEvent> get onTyping => _typing.stream;
+  Stream<InviteEvent> get onInvite => _invites.stream;
 
   bool get isConnected => _hub?.state == HubConnectionState.Connected;
 
@@ -78,6 +80,29 @@ class RealtimeService {
           }
         }
         _emit(a, _messages, Message.fromJson);
+      });
+      hub.on('invite', (a) {
+        debugPrint('[RealtimeService] invite raw: $a');
+        final map = _first(a);
+        if (map == null) return;
+        try {
+          final from = SpeekUser.fromJson(
+              (map['from'] as Map).cast<String, dynamic>());
+          final convId = (map['conversationId'] ?? '').toString();
+          final msg = map['message'];
+          final text = msg is Map ? (msg['text'] ?? '').toString() : '';
+          NotificationService.instance.showMessage(
+            senderName: from.name,
+            text: text.isEmpty ? '👋 Wants to practice speaking' : text,
+          );
+          _invites.add(InviteEvent(
+            conversationId: convId,
+            from: from,
+            mode: map['mode'] is int ? map['mode'] as int : null,
+          ));
+        } catch (e) {
+          debugPrint('[RealtimeService] invite parse failed: $e');
+        }
       });
       hub.on('incomingCall', (a) {
         debugPrint('[RealtimeService] incomingCall raw: $a');
@@ -178,4 +203,14 @@ class TypingEvent {
   final String from;
   final bool isTyping;
   TypingEvent({required this.from, required this.isTyping});
+}
+
+/// Fired when another user sends a "practice with me" invite from the map.
+class InviteEvent {
+  final String conversationId;
+  final SpeekUser from;
+
+  /// Suggested medium: null = chat, 0 = voice, 1 = video.
+  final int? mode;
+  InviteEvent({required this.conversationId, required this.from, this.mode});
 }

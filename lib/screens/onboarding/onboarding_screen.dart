@@ -28,21 +28,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late final _slides = <_Slide>[
     const _Slide(
       '🌍 A world of speakers',
-      'Find people to\ntalk to on the map',
-      'Discover real people online right now, from every corner of the planet.',
+      'Real people,\nlive on the map',
+      'See who is online right now around the world and start speaking in seconds.',
       _MapHero(),
     ),
     const _Slide(
-      '💜 Win-win matching',
-      'Match like a\ndating app',
-      'Natives find friends. Learners find practice. Everyone wins.',
-      _MatchHero(),
+      '🎯 Two ways to grow',
+      'Network or level\nup your speaking',
+      'Grow your global network, or practice with natives to upgrade your fluency. You choose.',
+      _PurposeHero(),
     ),
     const _Slide(
       '🏆 Gamified progress',
       'Earn badges as\nyou speak',
-      'Streaks, levels and creative badges keep you talking every day.',
+      'Streaks, levels and creative badges keep you talking every single day.',
       _BadgeHero(),
+    ),
+    const _Slide(
+      '🎁 14 days on us',
+      'Try everything\nfree for 14 days',
+      'Full access from day one. We confirm your card — no charge during the trial, cancel anytime.',
+      _TrialHero(),
     ),
   ];
 
@@ -147,8 +153,9 @@ class _MapHero extends StatelessWidget {
   }
 }
 
-class _MatchHero extends StatelessWidget {
-  const _MatchHero();
+/// Two clear, non-dating purposes: build a network, or improve speaking.
+class _PurposeHero extends StatelessWidget {
+  const _PurposeHero();
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -166,30 +173,11 @@ class _MatchHero extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Transform.translate(
-                offset: const Offset(12, 0),
-                child: Transform.rotate(angle: -0.1, child: _card(_a3)),
-              ),
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  gradient: AppColors.grad,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                        color: AppColors.brand500.withValues(alpha: 0.5),
-                        blurRadius: 30,
-                        offset: const Offset(0, 14))
-                  ],
-                ),
-                child: const Icon(Icons.favorite_rounded,
-                    color: Colors.white, size: 30),
-              ),
-              Transform.translate(
-                offset: const Offset(-12, 0),
-                child: Transform.rotate(angle: 0.1, child: _card(_a2)),
-              ),
+              _purposeCard(
+                  '🤝', 'Network', 'Meet pros worldwide', AppColors.cyan, -0.06),
+              const SizedBox(width: 16),
+              _purposeCard('🚀', 'Level up', 'Speak like a native',
+                  AppColors.brand400, 0.06),
             ],
           ),
         ],
@@ -197,18 +185,101 @@ class _MatchHero extends StatelessWidget {
     );
   }
 
-  Widget _card(String url) => Container(
-        width: 96,
-        height: 120,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppColors.n500, width: 3),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(19),
-          child: Image.network(url, fit: BoxFit.cover),
+  Widget _purposeCard(
+          String emoji, String title, String sub, Color tint, double angle) =>
+      Transform.rotate(
+        angle: angle,
+        child: Container(
+          width: 130,
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                tint.withValues(alpha: 0.22),
+                Colors.white.withValues(alpha: 0.04),
+              ],
+            ),
+            border: Border.all(color: tint.withValues(alpha: 0.5), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                  color: tint.withValues(alpha: 0.28),
+                  blurRadius: 26,
+                  offset: const Offset(0, 12)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 38)),
+              const SizedBox(height: 12),
+              Text(title,
+                  style: AppText.h3.copyWith(color: Colors.white, fontSize: 17)),
+              const SizedBox(height: 4),
+              Text(sub,
+                  textAlign: TextAlign.center,
+                  style: AppText.caption.copyWith(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 11.5)),
+            ],
+          ),
         ),
       );
+}
+
+/// Free-trial hero: a premium "14 days free" badge with a gold glow.
+class _TrialHero extends StatelessWidget {
+  const _TrialHero();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0, -0.2),
+          radius: 1,
+          colors: [Color(0xFF2A2410), Color(0xFF0C0C14)],
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const BrandGlow(),
+          Container(
+            width: 188,
+            height: 188,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppColors.gradGold,
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.gold.withValues(alpha: 0.45),
+                    blurRadius: 50,
+                    offset: const Offset(0, 18)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('14',
+                    style: AppText.displayMd.copyWith(
+                        color: const Color(0xFF3A2600),
+                        fontSize: 64,
+                        height: 1)),
+                Text('DAYS FREE',
+                    style: AppText.label.copyWith(
+                        color: const Color(0xFF3A2600),
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w900)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _BadgeHero extends StatelessWidget {

@@ -308,7 +308,7 @@ class _ConnectingDotsState extends State<_ConnectingDots>
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Ulanmoqda', style: style),
+            Text('Connecting', style: style),
             SizedBox(width: 24, child: Text(dots, style: style)),
           ],
         );

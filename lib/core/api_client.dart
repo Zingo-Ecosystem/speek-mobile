@@ -104,6 +104,22 @@ class ApiClient {
     });
   }
 
+  /// Uploads raw bytes via multipart/form-data. Works on every platform
+  /// (including web, where dart:io file paths are unavailable).
+  Future<dynamic> uploadBytes(String path, List<int> bytes, String filename,
+      {String field = 'file'}) async {
+    final req = http.MultipartRequest('POST', _uri(path));
+    final token = Session.instance.accessToken;
+    if (token != null && token.isNotEmpty) {
+      req.headers['Authorization'] = 'Bearer $token';
+    }
+    req.files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename));
+    return _send(() async {
+      final streamed = await req.send().timeout(const Duration(seconds: 60));
+      return http.Response.fromStream(streamed);
+    });
+  }
+
   Future<dynamic> _send(Future<http.Response> Function() run) async {
     http.Response res;
     try {

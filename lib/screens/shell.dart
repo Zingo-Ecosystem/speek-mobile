@@ -30,7 +30,7 @@ class _ShellScreenState extends State<ShellScreen> {
     return Scaffold(
       extendBody: true,
       body: IndexedStack(index: _index, children: _pages),
-      bottomNavigationBar: _TabBar(
+      bottomNavigationBar: LiquidNavBar(
         index: _index,
         onChanged: (i) => setState(() => _index = i),
       ),
@@ -38,148 +38,175 @@ class _ShellScreenState extends State<ShellScreen> {
   }
 }
 
-class _TabBar extends StatelessWidget {
+/// A modern floating "liquid" navigation bar: a glassy pill that floats above
+/// the content, with a gradient blob that fluidly glides under the active tab
+/// and each icon morphing into its filled, glowing variant when selected.
+class LiquidNavBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onChanged;
-  const _TabBar({required this.index, required this.onChanged});
+  const LiquidNavBar({super.key, required this.index, required this.onChanged});
+
+  static const _items = <_NavItem>[
+    _NavItem(
+      icon: Icons.forum_outlined,
+      activeIcon: Icons.forum_rounded,
+      label: 'Chats',
+      tint: AppColors.cyan,
+    ),
+    _NavItem(
+      icon: Icons.travel_explore_rounded,
+      activeIcon: Icons.public_rounded,
+      label: 'Map',
+      tint: AppColors.brand400,
+    ),
+    _NavItem(
+      icon: Icons.auto_awesome_outlined,
+      activeIcon: Icons.auto_awesome_rounded,
+      label: 'Me',
+      tint: AppColors.gold,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    return SizedBox(
-      height: 84 + bottomInset,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.bottomCenter,
-        children: [
-          // The bar itself
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Container(
-                height: 70 + bottomInset,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0C0C12).withValues(alpha: 0.94),
-                  border: Border(
-                      top: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.07))),
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 14 + bottomInset),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            height: 70,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF16161F).withValues(alpha: 0.92),
+                  const Color(0xFF0C0C12).withValues(alpha: 0.96),
+                ],
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
                 ),
-                padding: EdgeInsets.only(bottom: bottomInset),
-                child: Row(
+                BoxShadow(
+                  color: _items[index].tint.withValues(alpha: 0.18),
+                  blurRadius: 34,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final slot = c.maxWidth / _items.length;
+                return Stack(
                   children: [
-                    Expanded(
-                      child: _SideTab(
-                        icon: Icons.chat_bubble_outline_rounded,
-                        activeIcon: Icons.chat_bubble_rounded,
-                        label: 'Chats',
-                        active: index == 0,
-                        onTap: () => onChanged(0),
+                    // The gliding liquid blob behind the active tab.
+                    AnimatedAlign(
+                      duration: const Duration(milliseconds: 420),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment(
+                          _items.length == 1
+                              ? 0
+                              : (index / (_items.length - 1)) * 2 - 1,
+                          0),
+                      child: Container(
+                        width: slot - 26,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              _items[index].tint.withValues(alpha: 0.30),
+                              _items[index].tint.withValues(alpha: 0.10),
+                            ],
+                          ),
+                          border: Border.all(
+                              color: _items[index]
+                                  .tint
+                                  .withValues(alpha: 0.45),
+                              width: 1),
+                        ),
                       ),
                     ),
-                    const Expanded(child: SizedBox()), // space for center button
-                    Expanded(
-                      child: _SideTab(
-                        icon: Icons.person_outline_rounded,
-                        activeIcon: Icons.person_rounded,
-                        label: 'Profile',
-                        active: index == 2,
-                        onTap: () => onChanged(2),
-                      ),
+                    Row(
+                      children: [
+                        for (int i = 0; i < _items.length; i++)
+                          Expanded(
+                            child: _NavCell(
+                              item: _items[i],
+                              active: index == i,
+                              onTap: () => onChanged(i),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
-                ),
-              ),
+                );
+              },
             ),
           ),
-
-          // Center "Map" killer button
-          Positioned(
-            bottom: 18 + bottomInset,
-            child: _MapButton(
-              active: index == 1,
-              onTap: () => onChanged(1),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _SideTab extends StatelessWidget {
+class _NavItem {
   final IconData icon;
   final IconData activeIcon;
   final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _SideTab({
+  final Color tint;
+  const _NavItem({
     required this.icon,
     required this.activeIcon,
     required this.label,
-    required this.active,
-    required this.onTap,
+    required this.tint,
   });
+}
+
+class _NavCell extends StatelessWidget {
+  final _NavItem item;
+  final bool active;
+  final VoidCallback onTap;
+  const _NavCell(
+      {required this.item, required this.active, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? AppColors.brand400 : AppColors.n300;
+    final color = active ? item.tint : AppColors.n300;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(active ? activeIcon : icon, color: color, size: 25),
-          const SizedBox(height: 4),
-          Text(label,
-              style: AppText.caption.copyWith(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-}
-
-/// The elevated center Map button — the app's primary action.
-class _MapButton extends StatelessWidget {
-  final bool active;
-  final VoidCallback onTap;
-  const _MapButton({required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              gradient: AppColors.grad,
-              shape: BoxShape.circle,
-              border: Border.all(
-                  color: active
-                      ? Colors.white.withValues(alpha: 0.85)
-                      : Colors.white.withValues(alpha: 0.12),
-                  width: 3),
-              boxShadow: [
-                BoxShadow(
-                    color: AppColors.brand500.withValues(alpha: 0.55),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10)),
-              ],
-            ),
-            child: const Icon(Icons.public_rounded, color: Colors.white, size: 32),
+          AnimatedScale(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutBack,
+            scale: active ? 1.16 : 1.0,
+            child: Icon(active ? item.activeIcon : item.icon,
+                color: color, size: 24),
           ),
           const SizedBox(height: 4),
-          Text('Map',
-              style: AppText.caption.copyWith(
-                  color: active ? AppColors.brand300 : AppColors.n200,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 250),
+            style: AppText.caption.copyWith(
+              color: color,
+              fontSize: active ? 11.5 : 11,
+              fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+              letterSpacing: active ? 0.2 : 0,
+            ),
+            child: Text(item.label),
+          ),
         ],
       ),
     );

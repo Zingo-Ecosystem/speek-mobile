@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -12,6 +13,7 @@ import '../../widgets/common.dart';
 import '../../widgets/snack.dart';
 import '../call/incoming_call_screen.dart';
 import '../chat/conversation_screen.dart';
+import '../subscription/paywall_screen.dart';
 import 'register_gate_sheet.dart';
 
 /// Bottom sheet shown when tapping a user pin on the map.
@@ -99,6 +101,8 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
   bool _friendSent = false;
   bool _likeLoading = false;
   bool _friendLoading = false;
+  bool _inviteSent = false;
+  bool _inviteLoading = false;
 
   @override
   void initState() {
@@ -109,24 +113,57 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
     }
   }
 
-  void _call(BuildContext context) {
-    final nav = Navigator.of(context);
-    nav.pop();
+  /// Free users can browse the map but every action requires Premium. Returns
+  /// false (and opens the paywall) when the user isn't allowed to proceed.
+  bool _gate(BuildContext context) {
     if (!AppState.instance.isRegistered) {
       showRegisterGate(context, widget.user);
-    } else {
-      nav.push(MaterialPageRoute(
-          builder: (_) => IncomingCallScreen(user: widget.user)));
+      return false;
     }
+    if (!AppState.instance.isPremium) {
+      Navigator.of(context).pop();
+      Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PaywallScreen()));
+      return false;
+    }
+    return true;
+  }
+
+  void _call(BuildContext context) {
+    final nav = Navigator.of(context);
+    if (!_gate(context)) return;
+    nav.pop();
+    nav.push(MaterialPageRoute(
+        builder: (_) => IncomingCallScreen(user: widget.user)));
   }
 
   void _message(BuildContext context) {
+    if (!_gate(context)) return;
     Navigator.of(context).pop();
-    if (!AppState.instance.isRegistered) {
-      showRegisterGate(context, widget.user);
-    } else {
-      Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ConversationScreen(user: widget.user)));
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ConversationScreen(user: widget.user)));
+  }
+
+  /// Sends a "practice with me" invite. It lands in the peer's chat as a request;
+  /// once they accept, both can chat and start voice/video calls.
+  Future<void> _invite(BuildContext context) async {
+    if (!_gate(context)) return;
+    if (_inviteLoading || _inviteSent) return;
+    setState(() => _inviteLoading = true);
+    try {
+      await Repos.chat.invite(widget.user.id);
+      if (mounted) {
+        setState(() {
+          _inviteSent = true;
+          _inviteLoading = false;
+        });
+        showSnack(context, 'Invite sent to ${widget.user.name} 👋');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _inviteLoading = false);
+        showSnack(context, 'Could not send invite.', type: SnackType.error);
+      }
     }
   }
 
@@ -177,6 +214,7 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
     final subtitle = user.role == SpeakerRole.native
         ? 'Native speaker · ${user.city} · ${user.distanceKm} km away'
         : 'Learner · ${user.city} · ${user.level}';
+    final premium = AppState.instance.isPremium;
     return Container(
       constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.82),
@@ -210,18 +248,53 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: user.photoUrl.isNotEmpty
-                            ? Image.network(user.photoUrl,
-                                height: 220,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                loadingBuilder: (_, child, progress) =>
-                                    progress == null
-                                        ? child
-                                        : _previewFallback(user),
-                                errorBuilder: (_, __, ___) =>
-                                    _previewFallback(user))
-                            : _previewFallback(user),
+                        child: Stack(
+                          children: [
+                            user.photoUrl.isNotEmpty
+                                ? Image.network(user.photoUrl,
+                                    height: 220,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (_, child, progress) =>
+                                        progress == null
+                                            ? child
+                                            : _previewFallback(user),
+                                    errorBuilder: (_, __, ___) =>
+                                        _previewFallback(user))
+                                : _previewFallback(user),
+                            // Free users see a blurred photo behind a premium lock.
+                            if (!premium)
+                              Positioned.fill(
+                                child: ClipRRect(
+                                  child: BackdropFilter(
+                                    filter: ImageFilter.blur(
+                                        sigmaX: 18, sigmaY: 18),
+                                    child: Container(
+                                      color: Colors.black
+                                          .withValues(alpha: 0.28),
+                                      alignment: Alignment.center,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.lock_rounded,
+                                              color: Colors.white, size: 30),
+                                          const SizedBox(height: 8),
+                                          Text('Photos are a Premium perk',
+                                              style: AppText.label.copyWith(
+                                                  color: Colors.white)),
+                                          const SizedBox(height: 2),
+                                          Text('Unlock to see who you\'re talking to',
+                                              style: AppText.caption.copyWith(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.8))),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       if (user.online)
                         Positioned(
@@ -322,19 +395,46 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
                         onTap: (_friendSent || _friendLoading) ? null : _addFriend,
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                              child: GhostButton('💬 Message',
-                                  onTap: () => _message(context))),
-                          const SizedBox(width: 10),
-                          Expanded(
-                              child: user.inCall
-                                  ? GhostButton('📞 In a call', onTap: null)
-                                  : PrimaryButton('📞 Call now',
-                                      onTap: () => _call(context))),
-                        ],
-                      ),
+                      if (user.isConnected) ...[
+                        // Already connected → can chat & call.
+                        Row(
+                          children: [
+                            Expanded(
+                                child: PrimaryButton('💬 Message',
+                                    onTap: () => _message(context))),
+                            const SizedBox(width: 10),
+                            Expanded(
+                                child: user.inCall
+                                    ? GhostButton('📞 In a call', onTap: null)
+                                    : GhostButton('📞 Call now',
+                                        onTap: () => _call(context))),
+                          ],
+                        ),
+                      ] else ...[
+                        // Not connected yet → must invite & be accepted first.
+                        PrimaryButton(
+                          !premium
+                              ? '🔒 Unlock to invite'
+                              : _inviteSent
+                                  ? '✓ Invite sent'
+                                  : _inviteLoading
+                                      ? 'Sending...'
+                                      : '🗣 Invite to speak',
+                          onTap: (_inviteSent || _inviteLoading)
+                              ? null
+                              : () => _invite(context),
+                        ),
+                        const SizedBox(height: 8),
+                        Center(
+                          child: Text(
+                            _inviteSent
+                                ? 'We\'ll let you know when they accept.'
+                                : 'Chat & calls unlock once they accept.',
+                            style: AppText.caption
+                                .copyWith(color: AppColors.n300),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
