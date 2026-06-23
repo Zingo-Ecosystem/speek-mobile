@@ -21,6 +21,15 @@ class AppConfig {
   /// SignalR realtime hub.
   static String get realtimeHubUrl => '$apiBaseUrl/hubs/realtime';
 
+  /// Resolves a media path to an absolute URL. The API returns relative paths
+  /// like `/uploads/abc.jpg`; those must be prefixed with the API host or they
+  /// resolve against the app's own origin (and fail) on web.
+  static String media(String url) {
+    if (url.isEmpty) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return '$apiBaseUrl/${url.startsWith('/') ? url.substring(1) : url}';
+  }
+
   /// OAuth 2.0 **Web** client ID from Google Cloud, used as `serverClientId`
   /// so `google_sign_in` returns an `idToken` the backend can verify.
   ///

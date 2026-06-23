@@ -212,7 +212,7 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
   Widget build(BuildContext context) {
     final user = widget.user;
     final subtitle = user.role == SpeakerRole.native
-        ? 'Native speaker · ${user.city} · ${user.distanceKm} km away'
+        ? 'Native speaker · ${user.city} · ${AppState.instance.formatDistance(user.distanceKm)} away'
         : 'Learner · ${user.city} · ${user.level}';
     final premium = AppState.instance.isPremium;
     return Container(

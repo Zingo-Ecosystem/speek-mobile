@@ -5,6 +5,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_buttons.dart';
+import '../../widgets/invite_code_field.dart';
 import '../shell.dart';
 import '../onboarding/create_account_screen.dart';
 
@@ -19,12 +20,32 @@ Future<void> showRegisterGate(BuildContext context, SpeekUser user) {
   );
 }
 
-class _RegisterGateSheet extends StatelessWidget {
+class _RegisterGateSheet extends StatefulWidget {
   final SpeekUser user;
   const _RegisterGateSheet({required this.user});
 
   @override
+  State<_RegisterGateSheet> createState() => _RegisterGateSheetState();
+}
+
+class _RegisterGateSheetState extends State<_RegisterGateSheet> {
+  final _codeCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _codeCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.n800,
@@ -34,8 +55,8 @@ class _RegisterGateSheet extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              Insets.x6, 14, Insets.x6, Insets.x6),
+          padding: EdgeInsets.fromLTRB(Insets.x6, 14, Insets.x6,
+              Insets.x6 + MediaQuery.of(context).viewInsets.bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -77,14 +98,17 @@ class _RegisterGateSheet extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              InviteCodeField(controller: _codeCtrl),
+              const SizedBox(height: 14),
               AuthButtons(
+                referralCode: InviteCodeField.readCode(_codeCtrl),
                 onAuthenticated: (needsOnboarding) {
                   Navigator.of(context).pop();
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => needsOnboarding
                           ? const CreateAccountScreen()
-                          : const ShellScreen(initialIndex: 1)));
+                          : const ShellScreen(initialIndex: 2)));
                 },
               ),
             ],

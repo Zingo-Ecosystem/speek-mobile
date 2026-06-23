@@ -61,7 +61,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
-    final requests = _all.where((c) => c.isRequest).toList();
+    // Invites/requests now live in the People > Requests tab; chats shows only
+    // accepted conversations.
     final chats = _all.where((c) => !c.isRequest).toList();
     return Scaffold(
       body: RefreshIndicator(
@@ -81,12 +82,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const SizedBox(height: 16),
             _searchBar(),
             const SizedBox(height: 22),
-            if (requests.isNotEmpty) ...[
-              _requestsHeader(requests.length),
-              const SizedBox(height: 10),
-              for (final r in requests) _RequestCard(chat: r, onDone: _load),
-              const SizedBox(height: 20),
-            ],
             Text('MESSAGES',
                 style: AppText.label
                     .copyWith(color: AppColors.n200, fontSize: 13)),
@@ -140,124 +135,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       );
 
-  Widget _requestsHeader(int count) => Row(
-        children: [
-          Text('REQUESTS',
-              style: AppText.label
-                  .copyWith(color: AppColors.n200, fontSize: 13)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-                color: AppColors.like,
-                borderRadius: BorderRadius.circular(100)),
-            child: Text('$count',
-                style: AppText.caption.copyWith(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ],
-      );
-}
-
-class _RequestCard extends StatefulWidget {
-  final Chat chat;
-  final VoidCallback onDone;
-  const _RequestCard({required this.chat, required this.onDone});
-  @override
-  State<_RequestCard> createState() => _RequestCardState();
-}
-
-class _RequestCardState extends State<_RequestCard> {
-  bool _busy = false;
-
-  Future<void> _accept() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await Repos.chat.accept(widget.chat.id);
-      widget.onDone();
-    } catch (_) {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _decline() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await Repos.chat.decline(widget.chat.id);
-      widget.onDone();
-    } catch (_) {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.like.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.like.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Avatar(widget.chat.user.photoUrl, size: 46, name: widget.chat.user.name),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${widget.chat.user.name} ${widget.chat.user.flag}',
-                    style: AppText.label),
-                const SizedBox(height: 2),
-                Text(widget.chat.preview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.smMuted),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (_busy)
-            const SizedBox(
-              width: 34,
-              height: 34,
-              child: Center(
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.brand400),
-                ),
-              ),
-            )
-          else ...[
-            _reqBtn(Icons.check, AppColors.success, const Color(0xFF062206),
-                _accept),
-            const SizedBox(width: 6),
-            _reqBtn(Icons.close, Colors.white.withValues(alpha: 0.08),
-                AppColors.n200, _decline),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _reqBtn(IconData icon, Color bg, Color fg, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 34,
-          height: 34,
-          decoration:
-              BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11)),
-          child: Icon(icon, size: 16, color: fg),
-        ),
-      );
 }
 
 class _ChatRow extends StatelessWidget {

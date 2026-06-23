@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../state/app_state.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_text.dart';
 import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
 import '../shell.dart';
@@ -42,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
     Widget next;
     if (authed) {
       next = AppState.instance.isOnboarded
-          ? const ShellScreen(initialIndex: 1)
+          ? const ShellScreen(initialIndex: 2)
           : const CreateAccountScreen();
     } else {
       next = const OnboardingScreen();
@@ -86,10 +85,6 @@ class _SplashScreenState extends State<SplashScreen>
                       const LogoMark(size: 96),
                       const SizedBox(height: 22),
                       const Wordmark(fontSize: 46),
-                      const SizedBox(height: 10),
-                      Text('Speak the world.',
-                          style: AppText.body.copyWith(
-                              color: Colors.white.withValues(alpha: 0.8))),
                     ],
                   ),
                 ),

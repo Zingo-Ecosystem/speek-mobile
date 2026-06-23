@@ -86,15 +86,22 @@ class _MapScreenState extends State<MapScreen> {
   void _startHeartbeat(LatLng at) {
     debugPrint('[Heartbeat] isAuthenticated=${Session.instance.isAuthenticated}');
     if (!Session.instance.isAuthenticated) return;
-    Repos.map.heartbeat(at.latitude, at.longitude)
-        .then((_) => debugPrint('[Heartbeat] sent ${at.latitude},${at.longitude}'))
-        .catchError((e) => debugPrint('[Heartbeat] error: $e'));
+    // Respect the "Show me on the map" privacy toggle.
+    if (AppState.instance.showOnMap) {
+      Repos.map.heartbeat(at.latitude, at.longitude)
+          .then((_) => debugPrint('[Heartbeat] sent ${at.latitude},${at.longitude}'))
+          .catchError((e) => debugPrint('[Heartbeat] error: $e'));
+    }
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
       final loc = _myLocation ?? _start;
-      Repos.map.heartbeat(loc.latitude, loc.longitude)
-          .then((_) => debugPrint('[Heartbeat] tick'))
-          .catchError((e) => debugPrint('[Heartbeat] tick error: $e'));
+      if (AppState.instance.showOnMap) {
+        Repos.map.heartbeat(loc.latitude, loc.longitude)
+            .then((_) => debugPrint('[Heartbeat] tick'))
+            .catchError((e) => debugPrint('[Heartbeat] tick error: $e'));
+      } else {
+        Repos.map.offline().catchError((_) {});
+      }
       _refreshNearby(loc);
     });
   }

@@ -50,7 +50,7 @@ class TrialStartedScreen extends StatelessWidget {
                     child: PrimaryButton('Explore the map 🌍', onTap: () {
                       Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(
-                            builder: (_) => const ShellScreen(initialIndex: 1)),
+                            builder: (_) => const ShellScreen(initialIndex: 2)),
                         (_) => false,
                       );
                     }),

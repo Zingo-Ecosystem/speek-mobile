@@ -29,6 +29,8 @@ class SpeekUser {
   final bool isOnboarded;
   final bool inCall;
   final DateTime? callStartedAt;
+  final String email; // only populated for the signed-in user (/Profile/me)
+  final int callPolicy; // 0 Everyone, 1 Friends only, 2 No one
 
   /// Set when an *accepted* conversation already exists with this user — i.e.
   /// you're connected and may chat/call. Null means you must invite first.
@@ -56,6 +58,8 @@ class SpeekUser {
     this.inCall = false,
     this.callStartedAt,
     this.conversationId,
+    this.email = '',
+    this.callPolicy = 0,
   });
 
   /// True when an accepted conversation exists — chatting/calling is allowed.
@@ -72,11 +76,14 @@ class SpeekUser {
     int i(String key, [int fallback = 0]) =>
         (j[key] is num) ? (j[key] as num).toInt() : fallback;
 
-    final photos = (j['photos'] as List?)?.map((e) => '$e').toList() ?? const [];
+    final photos = (j['photos'] as List?)
+            ?.map((e) => AppConfig.media('$e'))
+            .toList() ??
+        const [];
     final interests =
         (j['interests'] as List?)?.map((e) => '$e').toList() ?? const [];
     final photo = s('photoUrl').isNotEmpty
-        ? s('photoUrl')
+        ? AppConfig.media(s('photoUrl'))
         : (photos.isNotEmpty ? photos.first : '');
 
     return SpeekUser(
@@ -102,6 +109,8 @@ class SpeekUser {
       callStartedAt: DateTime.tryParse('${j['callStartedAtUtc']}')?.toLocal(),
       conversationId:
           j['conversationId'] == null ? null : '${j['conversationId']}',
+      email: s('email'),
+      callPolicy: i('callPolicy'),
     );
   }
 }

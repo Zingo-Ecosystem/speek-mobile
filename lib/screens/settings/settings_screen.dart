@@ -7,6 +7,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../profile/edit_profile_screen.dart';
+import '../social/people_screen.dart';
 import '../subscription/manage_subscription_screen.dart';
 import '../subscription/paywall_screen.dart';
 import 'notification_settings_screen.dart';
@@ -46,9 +47,8 @@ class SettingsScreen extends StatelessWidget {
               _Section('Account'),
               _Row(Icons.person_outline_rounded, 'Edit profile',
                   onTap: () => _push(context, const EditProfileScreen())),
-              _Row(Icons.alternate_email_rounded, 'Email & phone',
-                  trailing: 'dotnettashkent@gmail.com'),
-              _Row(Icons.lock_outline_rounded, 'Password & security'),
+              _Row(Icons.alternate_email_rounded, 'Email',
+                  trailing: s.email.isNotEmpty ? s.email : '—'),
 
               _Section('Premium'),
               _Row(
@@ -73,14 +73,35 @@ class SettingsScreen extends StatelessWidget {
                       _push(context, const NotificationSettingsScreen())),
 
               _Section('Preferences'),
-              _Row(Icons.straighten_rounded, 'Distance unit', trailing: 'km'),
+              _Row(Icons.straighten_rounded, 'Distance unit',
+                  trailing: s.distanceUnit == 'mi' ? 'Miles' : 'Kilometers',
+                  onTap: () async {
+                    final v = await pickOption(context,
+                        title: 'Distance unit',
+                        options: const ['Kilometers', 'Miles'],
+                        selected:
+                            s.distanceUnit == 'mi' ? 'Miles' : 'Kilometers');
+                    if (v != null) {
+                      s.setDistanceUnit(v == 'Miles' ? 'mi' : 'km');
+                    }
+                  }),
 
               _Section('Privacy'),
-              _Row(Icons.block_rounded, 'Blocked users'),
+              _Row(Icons.block_rounded, 'Blocked users',
+                  onTap: () =>
+                      _push(context, const BlockedUsersScreen())),
               _Row(Icons.visibility_off_outlined, 'Who can call me',
-                  trailing: 'Everyone'),
+                  trailing: s.whoCanCall,
+                  onTap: () async {
+                    final v = await pickOption(context,
+                        title: 'Who can call me',
+                        options: const ['Everyone', 'Friends only', 'No one'],
+                        selected: s.whoCanCall);
+                    if (v != null) s.setWhoCanCall(v);
+                  }),
               _ToggleRow(Icons.location_on_outlined, 'Show me on the map',
-                  value: true, onChanged: (_) {}),
+                  value: s.showOnMap,
+                  onChanged: (v) => s.setShowOnMap(v)),
 
               _Section('Support'),
               _Row(Icons.help_outline_rounded, 'Help center'),

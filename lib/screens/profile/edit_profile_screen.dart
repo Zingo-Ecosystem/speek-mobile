@@ -41,10 +41,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  bool _uploadingPhoto = false;
+  // Local working copy of the photo gallery (first = main avatar).
+  late final List<String> _photos = List.of(_s.photos);
+  final _busy = <int>{}; // slot indexes currently uploading
+  bool _saving = false;
+  static const _maxPhotos = 6;
 
-  Future<void> _pickPhoto() async {
-    if (_uploadingPhoto) return;
+  Future<void> _pickPhoto(int slot) async {
+    if (_busy.contains(slot)) return;
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -52,23 +56,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         imageQuality: 85,
       );
       if (picked == null) return;
-      setState(() => _uploadingPhoto = true);
+      setState(() => _busy.add(slot));
       final bytes = await picked.readAsBytes();
-      final err = await _s.updatePhoto(bytes, picked.name);
+      final url = await _s.uploadPhoto(bytes, picked.name);
       if (!mounted) return;
-      setState(() => _uploadingPhoto = false);
-      showSnack(context, err ?? 'Photo updated',
-          type: err == null ? SnackType.success : SnackType.error);
-    } catch (_) {
+      setState(() {
+        _busy.remove(slot);
+        if (url.isNotEmpty) _photos.add(url);
+      });
+    } catch (e) {
       if (mounted) {
-        setState(() => _uploadingPhoto = false);
-        showSnack(context, 'Could not pick image', type: SnackType.error);
+        setState(() => _busy.remove(slot));
+        showSnack(context, 'Upload failed: $e', type: SnackType.error);
       }
     }
   }
 
+  void _removePhoto(int index) => setState(() => _photos.removeAt(index));
+
+  void _makeMain(int index) => setState(() {
+        final url = _photos.removeAt(index);
+        _photos.insert(0, url);
+      });
+
   Future<void> _save() async {
-    _s.saveProfile(
+    if (_saving) return;
+    setState(() => _saving = true);
+    await _s.saveProfile(
       name: _name.text.trim().isEmpty ? _s.name : _name.text.trim(),
       age: int.tryParse(_age.text.trim()) ?? _s.age,
       gender: _gender,
@@ -78,8 +92,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       isLearner: _isLearner,
       bio: _bio.text.trim(),
     );
-    showSnack(context, 'Profile updated', type: SnackType.success);
-    Navigator.of(context).pop();
+    final photoErr = await _s.savePhotos(_photos);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    showSnack(context, photoErr ?? 'Profile updated',
+        type: photoErr == null ? SnackType.success : SnackType.error);
+    if (photoErr == null) Navigator.of(context).pop();
   }
 
   @override
@@ -113,51 +131,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               padding: const EdgeInsets.fromLTRB(
                   Insets.x5, 0, Insets.x5, Insets.x8),
               children: [
-                Center(
-                  child: GestureDetector(
-                    onTap: _pickPhoto,
-                    child: Stack(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: AppColors.brand500, width: 2),
-                          ),
-                          child: Avatar(_s.photoUrl, size: 96, name: _s.name),
-                        ),
-                        if (_uploadingPhoto)
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.black.withValues(alpha: 0.45),
-                              ),
-                              child: const Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2.5, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                                gradient: AppColors.grad,
-                                shape: BoxShape.circle),
-                            child: const Icon(Icons.camera_alt,
-                                size: 16, color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                _label('Photos'),
+                const SizedBox(height: 8),
+                Text('Add up to $_maxPhotos — tap a photo to make it your main.',
+                    style: AppText.caption.copyWith(color: AppColors.sText3)),
+                const SizedBox(height: 12),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  children: [
+                    for (int i = 0; i < _maxPhotos; i++)
+                      if (i < _photos.length)
+                        _photoTile(i)
+                      else
+                        _addTile(i, uploading: _busy.contains(i)),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 _input('First name', _name),
@@ -222,7 +213,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 16),
                 _input('About you', _bio, maxLines: 3),
                 const SizedBox(height: 24),
-                PrimaryButton('Save changes', onTap: _save),
+                PrimaryButton(_saving ? 'Saving…' : 'Save changes',
+                    onTap: _saving ? null : _save),
               ],
             ),
           ),
@@ -233,6 +225,77 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _label(String t) =>
       Text(t, style: AppText.label.copyWith(color: AppColors.sText2));
+
+  Widget _photoTile(int index) => GestureDetector(
+        onTap: index == 0 ? null : () => _makeMain(index),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(_photos[index], fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                        color: AppColors.sFill(0.1),
+                        child: Icon(Icons.broken_image_outlined,
+                            color: AppColors.sText3),
+                      )),
+            ),
+            if (index == 0)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                      gradient: AppColors.grad,
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Text('MAIN',
+                      style: AppText.caption.copyWith(
+                          fontSize: 9,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800)),
+                ),
+              ),
+            Positioned(
+              top: 5,
+              right: 5,
+              child: GestureDetector(
+                onTap: () => _removePhoto(index),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                      color: Colors.black54, shape: BoxShape.circle),
+                  child:
+                      const Icon(Icons.close, size: 14, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _addTile(int slot, {bool uploading = false}) => GestureDetector(
+        onTap: uploading ? null : () => _pickPhoto(slot),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.brand500.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+                color: AppColors.brand500.withValues(alpha: 0.4), width: 1.5),
+          ),
+          child: Center(
+            child: uploading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5, color: AppColors.brand400))
+                : Icon(Icons.add_a_photo_outlined,
+                    color: AppColors.brand400, size: 26),
+          ),
+        ),
+      );
 
   Widget _input(String label, TextEditingController c,
       {TextInputType? keyboard, int maxLines = 1}) {

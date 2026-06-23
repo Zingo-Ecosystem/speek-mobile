@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/api_exception.dart';
 import '../core/session.dart';
@@ -85,10 +86,15 @@ class AppState extends ChangeNotifier {
   String get photoUrl =>
       currentUser?.photoUrl.isNotEmpty == true ? currentUser!.photoUrl : '';
 
+  /// The user's full photo gallery (first is the main avatar).
+  List<String> get photos => currentUser?.photos ?? const [];
+
   // ---- Gamification ----
   int totalXp = 0;
   int totalCalls = 0;
   int streakDays = 0;
+  int bestStreakDays = 0;
+  int xpBalance = 0; // spendable XP (total earned minus spent in marketplace)
   Duration totalTalk = Duration.zero;
   int _serverCountriesSpoken = 0;
   final Set<String> countriesSpoken = {};
@@ -122,7 +128,69 @@ class AppState extends ChangeNotifier {
   String referralCode = '—';
   int invitedFriends = 0;
   int referralPremiumDays = 0;
+  List<InvitedFriend> invitedPeople = const [];
   static const referralRewardDays = 10;
+
+  String get email => currentUser?.email ?? '';
+
+  // ---- Privacy / preferences (persisted locally) ----
+  static const _kShowOnMap = 'pref_show_on_map';
+  static const _kDistanceUnit = 'pref_distance_unit';
+  static const _kWhoCanCall = 'pref_who_can_call';
+  final _prefStore = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  bool showOnMap = true;
+  String distanceUnit = 'km'; // 'km' | 'mi'
+  String whoCanCall = 'Everyone'; // 'Everyone' | 'Friends only' | 'No one'
+
+  /// Loads locally persisted preferences. Best-effort.
+  Future<void> loadPrefs() async {
+    try {
+      showOnMap = (await _prefStore.read(key: _kShowOnMap)) != 'false';
+      distanceUnit = (await _prefStore.read(key: _kDistanceUnit)) ?? 'km';
+      whoCanCall = (await _prefStore.read(key: _kWhoCanCall)) ?? 'Everyone';
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  Future<void> setShowOnMap(bool v) async {
+    showOnMap = v;
+    notifyListeners();
+    try {
+      await _prefStore.write(key: _kShowOnMap, value: '$v');
+    } catch (_) {}
+  }
+
+  Future<void> setDistanceUnit(String unit) async {
+    distanceUnit = unit;
+    notifyListeners();
+    try {
+      await _prefStore.write(key: _kDistanceUnit, value: unit);
+    } catch (_) {}
+  }
+
+  Future<void> setWhoCanCall(String value) async {
+    whoCanCall = value;
+    notifyListeners();
+    try {
+      await _prefStore.write(key: _kWhoCanCall, value: value);
+    } catch (_) {}
+    // Persist to backend so the call gate is enforced server-side.
+    try {
+      await Repos.profile.setCallPolicy(value);
+    } catch (_) {}
+  }
+
+  /// Formats a distance (given in km) using the user's preferred unit.
+  String formatDistance(double km) {
+    if (distanceUnit == 'mi') {
+      final mi = km * 0.621371;
+      return mi < 0.1 ? 'nearby' : '${mi.toStringAsFixed(mi < 10 ? 1 : 0)} mi';
+    }
+    return km < 0.1 ? 'nearby' : '${km.toStringAsFixed(km < 10 ? 1 : 0)} km';
+  }
 
   // ---- Notification settings ----
   final Map<String, bool> notifications = {
@@ -143,6 +211,7 @@ class AppState extends ChangeNotifier {
   /// Called at startup. Returns true if a valid session was restored.
   Future<bool> bootstrap() async {
     await Session.instance.load();
+    await loadPrefs();
     if (!Session.instance.isAuthenticated) return false;
     try {
       await hydrate();
@@ -178,6 +247,7 @@ class AppState extends ChangeNotifier {
     if (results[0] is SpeekUser) {
       currentUser = results[0] as SpeekUser;
       isOnboarded = currentUser!.isOnboarded;
+      whoCanCall = ProfileRepository.callPolicyFromInt(currentUser!.callPolicy);
       _applyUser(currentUser!);
     }
     if (results[1] is GamificationData) _applyGamification(results[1] as GamificationData);
@@ -229,6 +299,8 @@ class AppState extends ChangeNotifier {
     totalTalk = Duration(seconds: g.totalTalkSeconds);
     _serverCountriesSpoken = g.countriesSpoken;
     serverBadges = g.badges;
+    bestStreakDays = g.bestStreakDays;
+    xpBalance = g.xpBalance;
   }
 
   void _applySubscription(SubscriptionData s) {
@@ -241,6 +313,7 @@ class AppState extends ChangeNotifier {
     referralCode = r.code;
     invitedFriends = r.invitedFriends;
     referralPremiumDays = r.rewardDaysGranted;
+    invitedPeople = r.invited;
   }
 
   // =========================================================================
@@ -396,6 +469,62 @@ class AppState extends ChangeNotifier {
       return e.message;
     } catch (e) {
       return 'Upload failed: $e';
+    }
+  }
+
+  /// Replaces the user's photo gallery. Returns null on success or an error message.
+  Future<String?> savePhotos(List<String> urls) async {
+    try {
+      currentUser = await Repos.profile.setPhotos(urls);
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      // Older backends without the gallery endpoint: fall back to setting just
+      // the main avatar so the photo still persists and shows up.
+      if (urls.isNotEmpty && (e.statusCode == 404 || e.statusCode == 405)) {
+        try {
+          currentUser = await Repos.profile.setPhoto(urls.first);
+          notifyListeners();
+          return null;
+        } catch (_) {}
+      }
+      return e.message;
+    } catch (e) {
+      return 'Could not save photos: $e';
+    }
+  }
+
+  /// Uploads picked image bytes and returns the hosted URL (used by edit profile).
+  Future<String> uploadPhoto(List<int> bytes, String filename) =>
+      Repos.profile.uploadImageBytes(bytes, filename);
+
+  // ---- Marketplace / XP economy ----
+  Future<BuyResult?> buyProduct(String productId) async {
+    try {
+      final res = await Repos.marketplace.buy(productId);
+      if (res.success) {
+        xpBalance = res.xpBalance;
+        notifyListeners();
+        // Premium purchases extend the subscription — refresh it.
+        refreshSubscription();
+      }
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Claims the daily streak reward. Returns granted XP (0 if already claimed).
+  Future<int> claimDailyReward() async {
+    try {
+      final r = await Repos.marketplace.claimDaily();
+      final granted = (r['xpGranted'] as num?)?.toInt() ?? 0;
+      xpBalance = (r['xpBalance'] as num?)?.toInt() ?? xpBalance;
+      if (granted > 0) totalXp += granted;
+      notifyListeners();
+      return granted;
+    } catch (_) {
+      return 0;
     }
   }
 

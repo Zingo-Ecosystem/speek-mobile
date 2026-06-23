@@ -89,6 +89,28 @@ class ProfileRepository {
     final j = await _api.post('/Profile/photo', body: {'url': url});
     return SpeekUser.fromJson((j as Map).cast());
   }
+
+  /// Replaces the whole photo gallery (first url becomes the avatar).
+  Future<SpeekUser> setPhotos(List<String> urls) async {
+    final j = await _api.put('/Profile/photos', body: {'urls': urls});
+    return SpeekUser.fromJson((j as Map).cast());
+  }
+
+  /// Sets who may call the user: 'Everyone' | 'Friends only' | 'No one'.
+  Future<void> setCallPolicy(String policy) =>
+      _api.put('/Profile/call-policy', body: {'policy': _callPolicyToInt(policy)});
+
+  static int _callPolicyToInt(String p) => switch (p) {
+        'Friends only' => 1,
+        'No one' => 2,
+        _ => 0, // Everyone
+      };
+
+  static String callPolicyFromInt(int v) => switch (v) {
+        1 => 'Friends only',
+        2 => 'No one',
+        _ => 'Everyone',
+      };
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +373,20 @@ class FriendRepository {
   /// Removes a friendship or declines a pending request.
   Future<void> remove(String targetId) =>
       _api.delete('/friends/$targetId');
+
+  /// Blocks a user: drops friendship, blocks chat, hides both from each other.
+  Future<void> block(String targetId) =>
+      _api.post('/friends/$targetId/block');
+
+  /// Lifts a previously placed block.
+  Future<void> unblock(String targetId) =>
+      _api.delete('/friends/$targetId/block');
+
+  /// Users the current user has blocked.
+  Future<List<BlockedUser>> blocked() async {
+    final j = await _api.get('/friends/blocked');
+    return _list(j).map(BlockedUser.fromJson).toList();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +417,39 @@ class SocialRepository {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Marketplace / XP economy + challenges
+// ---------------------------------------------------------------------------
+class MarketplaceRepository {
+  final _api = ApiClient.instance;
+
+  Future<MarketplaceData> list() async {
+    final j = await _api.get('/marketplace');
+    return MarketplaceData.fromJson((j as Map).cast());
+  }
+
+  Future<List<String>> inventory() async {
+    final j = await _api.get('/marketplace/inventory');
+    return _list(j).map((e) => '$e').toList();
+  }
+
+  Future<BuyResult> buy(String productId) async {
+    final j = await _api.post('/marketplace/$productId/buy');
+    return BuyResult.fromJson((j as Map).cast());
+  }
+
+  Future<ChallengeJourney> journey() async {
+    final j = await _api.get('/challenges');
+    return ChallengeJourney.fromJson((j as Map).cast());
+  }
+
+  /// Claims the daily streak reward. Returns granted XP and new balance.
+  Future<Map<String, dynamic>> claimDaily() async {
+    final j = await _api.post('/challenges/claim');
+    return (j as Map).cast();
+  }
+}
+
 /// Single access point for all repositories.
 class Repos {
   Repos._();
@@ -393,4 +462,5 @@ class Repos {
   static final notifications = NotificationRepository();
   static final friends = FriendRepository();
   static final social = SocialRepository();
+  static final marketplace = MarketplaceRepository();
 }

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../state/app_state.dart';
@@ -8,8 +9,7 @@ import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
 import '../settings/referral_screen.dart';
 import '../settings/settings_screen.dart';
-import '../social/friends_screen.dart';
-import '../social/social_screen.dart';
+import '../store/marketplace_screen.dart';
 import '../subscription/manage_subscription_screen.dart';
 import '../subscription/paywall_screen.dart';
 import 'badge_gallery_screen.dart';
@@ -81,10 +81,6 @@ class ProfileScreen extends StatelessWidget {
                       SquareIconButton(Icons.edit_outlined,
                           bg: const Color(0x66000000),
                           onTap: () => _push(context, const EditProfileScreen())),
-                      const SizedBox(width: 10),
-                      SquareIconButton(Icons.settings_outlined,
-                          bg: const Color(0x66000000),
-                          onTap: () => _push(context, const SettingsScreen())),
                     ],
                   ),
                 ),
@@ -142,6 +138,20 @@ class ProfileScreen extends StatelessWidget {
                   s.isPremium ? _PremiumActiveCard(s) : _GoPremiumCard(),
                   const SizedBox(height: 20),
 
+                  // Invite & earn — full section
+                  _InviteCard(
+                    s,
+                    onOpen: () => _push(context, const ReferralScreen()),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // XP marketplace entry (journey lives in the navbar now)
+                  _MarketplaceCard(
+                    balance: s.xpBalance,
+                    onTap: () => _push(context, const MarketplaceScreen()),
+                  ),
+                  const SizedBox(height: 20),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -191,19 +201,9 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
 
-                  _row(context, Icons.people_outline_rounded, 'Friends',
-                      () => _push(context, const FriendsScreen())),
-                  _row(context, Icons.favorite_outline_rounded,
-                      'Who liked & viewed me',
-                      () => _push(context, const SocialScreen()),
-                      trailing: s.isPremium ? null : '👑'),
                   _row(context, Icons.help_outline_rounded,
                       'How XP & streaks work',
                       () => showHowItWorks(context)),
-                  _row(context, Icons.card_giftcard_rounded,
-                      'Invite friends · earn Premium',
-                      () => _push(context, const ReferralScreen()),
-                      trailing: '+${AppState.referralRewardDays}d'),
                   _row(context, Icons.settings_outlined, 'Settings',
                       () => _push(context, const SettingsScreen())),
                 ],
@@ -296,6 +296,233 @@ class _CoverGradient extends StatelessWidget {
       child: Avatar('', size: 96, name: s.name),
     );
   }
+}
+
+/// Full-width XP marketplace entry on the profile.
+class _MarketplaceCard extends StatelessWidget {
+  final int balance;
+  final VoidCallback onTap;
+  const _MarketplaceCard({required this.balance, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.gold.withValues(alpha: 0.18),
+              AppColors.brand500.withValues(alpha: 0.16),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                  gradient: AppColors.gradGold, shape: BoxShape.circle),
+              child: const Text('🛍', style: TextStyle(fontSize: 22)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('XP Marketplace',
+                      style: AppText.label.copyWith(color: Colors.white)),
+                  const SizedBox(height: 3),
+                  Text('Spend your XP on avatars, themes & premium',
+                      style: AppText.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('⚡ $balance',
+                    style: AppText.label.copyWith(color: AppColors.gold)),
+                Text('XP',
+                    style: AppText.caption
+                        .copyWith(fontSize: 10, color: AppColors.sText3)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full invite section on the profile: explains the +10-days reward, shows how
+/// many friends joined (with avatar stack), and opens the full referral hub.
+class _InviteCard extends StatelessWidget {
+  final AppState s;
+  final VoidCallback onOpen;
+  const _InviteCard(this.s, {required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    final people = s.invitedPeople;
+    final earned = s.referralPremiumDays;
+    return GestureDetector(
+      onTap: onOpen,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.brand600.withValues(alpha: 0.55),
+              AppColors.brand900.withValues(alpha: 0.55),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.brand500.withValues(alpha: 0.45)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text('🎁', style: TextStyle(fontSize: 24)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Invite friends, earn Premium',
+                          style: AppText.label.copyWith(color: Colors.white)),
+                      const SizedBox(height: 3),
+                      Text.rich(
+                        TextSpan(children: [
+                          const TextSpan(text: 'Get '),
+                          TextSpan(
+                              text: '+${AppState.referralRewardDays} days',
+                              style: TextStyle(
+                                  color: AppColors.gold,
+                                  fontWeight: FontWeight.w800)),
+                          const TextSpan(text: ' free for every friend'),
+                        ]),
+                        style: AppText.caption.copyWith(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: Colors.white.withValues(alpha: 0.8)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.10)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (people.isNotEmpty) _AvatarStack(people: people),
+                if (people.isNotEmpty) const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    people.isEmpty
+                        ? 'No friends invited yet — tap to start'
+                        : '${s.invitedFriends} joined · +${earned}d earned',
+                    style: AppText.caption.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 12.5),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('Invite',
+                      style: AppText.caption.copyWith(
+                          color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Overlapping avatar stack of up to 4 invited friends.
+class _AvatarStack extends StatelessWidget {
+  final List people;
+  const _AvatarStack({required this.people});
+
+  @override
+  Widget build(BuildContext context) {
+    final show = people.take(4).toList();
+    const d = 28.0;
+    const overlap = 18.0;
+    return SizedBox(
+      width: overlap * (show.length - 1) + d,
+      height: d,
+      child: Stack(
+        children: [
+          for (int i = 0; i < show.length; i++)
+            Positioned(
+              left: i * overlap,
+              child: Container(
+                width: d,
+                height: d,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.brand900, width: 1.6),
+                  gradient: AppColors.grad,
+                ),
+                child: ClipOval(
+                  child: show[i].photoUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: show[i].photoUrl!,
+                          width: d,
+                          height: d,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _initial(show[i].name),
+                        )
+                      : _initial(show[i].name),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _initial(String name) => Center(
+        child: Text(
+          (name.isNotEmpty ? name[0] : '?').toUpperCase(),
+          style: AppText.caption
+              .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      );
 }
 
 class _GoPremiumCard extends StatelessWidget {
