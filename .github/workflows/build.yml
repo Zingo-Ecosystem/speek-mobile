@@ -50,36 +50,40 @@ jobs:
       - name: Get version from pubspec
         id: version
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          # pubspec version looks like "1.0.0+1"; keep the name part, drop +meta.
+          RAW=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION="${RAW%%+*}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # Unique, increasing per-push identifiers.
           echo "name=v${VERSION}-build${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-build${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Build universal APK
-        run: flutter build apk --release
+        # --build-number bumps the Android versionCode on every push so each
+        # release carries a new, increasing version.
+        run: flutter build apk --release --build-number=${GITHUB_RUN_NUMBER} --build-name=${{ steps.version.outputs.version }}
 
       - name: Rename APK
         run: |
           mv build/app/outputs/flutter-apk/app-release.apk \
-             build/app/outputs/flutter-apk/speek.apk
+             build/app/outputs/flutter-apk/speek-${{ steps.version.outputs.name }}.apk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: speek-apk-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/speek.apk
+          path: build/app/outputs/flutter-apk/speek-${{ steps.version.outputs.name }}.apk
           retention-days: 30
 
-      - name: Delete existing latest release
-        run: gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create latest release
+      - name: Create release
+        # A brand-new release on every push, tagged with the unique build name
+        # and marked as the latest. Old releases are kept so you have history.
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Latest Build (${{ steps.version.outputs.name }})"
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Speek ${{ steps.version.outputs.name }}"
           body: |
-            Oxirgi build: `${{ steps.version.outputs.name }}`
+            Build: `${{ steps.version.outputs.name }}`
             Commit: ${{ github.sha }}
-          files: build/app/outputs/flutter-apk/speek.apk
+          files: build/app/outputs/flutter-apk/speek-${{ steps.version.outputs.name }}.apk
           make_latest: true
