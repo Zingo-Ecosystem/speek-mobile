@@ -324,7 +324,8 @@ class Mission {
 /// Builder — the single entry point. Pure projection of backend + app state.
 /// ---------------------------------------------------------------------------
 class JourneyWorldBuilder {
-  static List<JourneyWorld> build(ChallengeJourney j) {
+  static List<JourneyWorld> build(ChallengeJourney j, [AppState? state]) {
+    final s = state ?? AppState.instance;
     final worlds = <JourneyWorld>[];
     for (var w = 0; w < kWorldThemes.length; w++) {
       final theme = kWorldThemes[w];
@@ -338,7 +339,7 @@ class JourneyWorldBuilder {
 
       final nodes = <WorldNode>[];
       for (var i = 0; i < slice.length; i++) {
-        nodes.add(_node(theme, slice[i], i, j));
+        nodes.add(_node(theme, slice[i], i, j, s));
       }
 
       final completedInWorld = slice.where((d) => d.completed).length;
@@ -369,8 +370,8 @@ class JourneyWorldBuilder {
     return worlds;
   }
 
-  static WorldNode _node(
-      WorldTheme theme, ChallengeDay d, int indexInWorld, ChallengeJourney j) {
+  static WorldNode _node(WorldTheme theme, ChallengeDay d, int indexInWorld,
+      ChallengeJourney j, AppState s) {
     final isMilestone = indexInWorld == kDaysPerWorld - 1;
     final isCheckpoint = !isMilestone && (indexInWorld + 1) % 7 == 0;
     final kind = isMilestone
@@ -403,18 +404,31 @@ class JourneyWorldBuilder {
         : isCheckpoint
             ? 'Speaking Challenge'
             : '$skill drill';
+    final minutes = isMilestone ? 8 : (isCheckpoint ? 5 : 3);
     final objective = isMilestone
         ? 'Beat the world boss: a full live conversation using everything you learned.'
         : isCheckpoint
-            ? 'Record a pronunciation challenge and hit the target score.'
-            : 'Practise "$skill" out loud, then speak with one real partner.';
+            ? 'Speak for $minutes minutes straight on the "$skill" topic with a real partner.'
+            : 'Warm up on "$skill" out loud, then speak with one real partner.';
 
     // Unlock requirements for the active node make "what's next" explicit.
+    // Everything is a real speaking action — no AI. Tasks rotate per day so the
+    // journey keeps asking for fresh speaking practice (minutes spoken, real
+    // conversations, meeting new speakers).
+    final claimedToday = !(j.canClaimToday);
+    final spokeToday = !(j.canClaimToday); // daily activity is logged on claim
     final requirements = status == NodeStatus.active
         ? <UnlockRequirement>[
-            UnlockRequirement('Complete an AI speaking drill', false),
-            UnlockRequirement('Have 1 real conversation', false),
-            const UnlockRequirement('Claim your daily reward', false),
+            UnlockRequirement('Speak out loud for $minutes minutes', false),
+            UnlockRequirement(
+                isMilestone || isCheckpoint
+                    ? 'Have ${isMilestone ? 2 : 1} real conversation${isMilestone ? 's' : ''}'
+                    : 'Have 1 real conversation',
+                spokeToday),
+            // Rotate a social speaking goal in so users keep meeting new partners.
+            indexInWorld.isEven
+                ? const UnlockRequirement('Send a friend request to a new speaker', false)
+                : UnlockRequirement('Claim your daily reward', claimedToday),
           ]
         : const <UnlockRequirement>[];
 

@@ -396,13 +396,13 @@ class SocialRepository {
   final _api = ApiClient.instance;
 
   Future<void> like(String profileId) =>
-      _api.post('/profiles/$profileId/like');
+      _api.post('/social/profiles/$profileId/like');
 
   Future<void> unlike(String profileId) =>
-      _api.delete('/profiles/$profileId/like');
+      _api.delete('/social/profiles/$profileId/like');
 
   Future<void> recordView(String profileId) =>
-      _api.post('/profiles/$profileId/view');
+      _api.post('/social/profiles/$profileId/view');
 
   /// Premium required — who liked me.
   Future<List<SocialUserData>> whoLikedMe() async {

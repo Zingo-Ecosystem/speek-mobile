@@ -11,6 +11,7 @@ class SpeekUser {
   final String id;
   final String name;
   final int age;
+  final String gender;
   final String flag;
   final String country;
   final String city;
@@ -41,6 +42,7 @@ class SpeekUser {
     required this.id,
     required this.name,
     required this.age,
+    this.gender = '',
     required this.flag,
     required this.country,
     required this.city,
@@ -92,6 +94,7 @@ class SpeekUser {
       id: s('id'),
       name: s('name', 'Speeker'),
       age: i('age'),
+      gender: s('gender'),
       flag: s('flag'),
       country: s('countryName').isNotEmpty ? s('countryName') : s('countryCode'),
       city: s('city'),

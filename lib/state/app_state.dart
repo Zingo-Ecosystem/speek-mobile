@@ -56,7 +56,7 @@ class AppState extends ChangeNotifier {
   // ---- Profile (editable) ----
   String name = 'Speeker';
   int age = 24;
-  String gender = 'Female';
+  String gender = 'Prefer not to say';
   String country = '🇫🇷 France'; // "<flag> <name>" for the UI pickers
   String countryCode = '';
   String city = '';
@@ -281,6 +281,7 @@ class AppState extends ChangeNotifier {
   void _applyUser(SpeekUser u) {
     name = u.name;
     age = u.age;
+    if (u.gender.isNotEmpty) gender = u.gender;
     city = u.city;
     bio = u.bio;
     level = u.level.isNotEmpty ? u.level : level;

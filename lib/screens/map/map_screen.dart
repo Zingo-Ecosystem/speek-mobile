@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -31,8 +32,8 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final _map = MapController();
-  static const _start = LatLng(25, 0); // world-ish center
-  double _zoom = 3.2;
+  static const _start = LatLng(30, 8); // world-ish center
+  double _zoom = 2.4;
   LatLng? _myLocation;
   bool _locating = false;
   bool _needsLocation = false;
@@ -200,11 +201,48 @@ class _MapScreenState extends State<MapScreen> {
     showSnack(context, msg, type: type);
   }
 
+  /// Many users can share the exact same coordinate (same city centroid, or a
+  /// privacy-rounded position). Stacked markers can't be tapped apart even at
+  /// max zoom, so we fan co-located users out onto a small deterministic ring.
+  /// Deterministic = the same user always lands in the same spot (no jitter on
+  /// rebuild). The ~0.00018° radius (~20m) only becomes visible once you zoom
+  /// in close, leaving the world view unchanged.
+  Map<String, LatLng> _spreadPoints(List<SpeekUser> users) {
+    final groups = <String, List<SpeekUser>>{};
+    for (final u in users) {
+      // Bucket by ~11m precision so genuinely co-located users group together.
+      final key = '${u.lat.toStringAsFixed(4)},${u.lng.toStringAsFixed(4)}';
+      (groups[key] ??= []).add(u);
+    }
+    final out = <String, LatLng>{};
+    for (final group in groups.values) {
+      if (group.length == 1) {
+        out[group.first.id] = LatLng(group.first.lat, group.first.lng);
+        continue;
+      }
+      // Stable order so positions don't shuffle between rebuilds.
+      group.sort((a, b) => a.id.compareTo(b.id));
+      const radius = 0.00018; // degrees (~20m)
+      for (var i = 0; i < group.length; i++) {
+        final u = group[i];
+        final angle = (2 * math.pi / group.length) * i;
+        // cos(lat) keeps the ring circular away from the equator.
+        final latRad = u.lat * math.pi / 180;
+        out[u.id] = LatLng(
+          u.lat + radius * math.sin(angle),
+          u.lng + radius * math.cos(angle) / math.max(0.2, math.cos(latRad)),
+        );
+      }
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final onlineCount = _users.where((u) => u.online).length;
     final hasFilter = !_filter.isEmpty;
+    final points = _spreadPoints(_users);
 
     return Scaffold(
       body: Stack(
@@ -259,7 +297,7 @@ class _MapScreenState extends State<MapScreen> {
                 markers: [
                   for (final u in _users)
                     Marker(
-                      point: LatLng(u.lat, u.lng),
+                      point: points[u.id] ?? LatLng(u.lat, u.lng),
                       width: 54,
                       height: 64,
                       alignment: Alignment.topCenter,

@@ -562,6 +562,15 @@ class _GoPremiumCard extends StatelessWidget {
   }
 }
 
+String _fmtDate(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  final l = d.toLocal();
+  return '${months[l.month - 1]} ${l.day}, ${l.year}';
+}
+
 class _PremiumActiveCard extends StatelessWidget {
   final AppState s;
   const _PremiumActiveCard(this.s);
@@ -615,6 +624,13 @@ class _PremiumActiveCard extends StatelessWidget {
                           : '${s.premiumDaysLeft} days left · tap to manage',
                       style: AppText.caption.copyWith(
                           color: AppColors.sText2, fontSize: 12)),
+                  if (s.premiumUntil != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                        '${s.isSubscribed ? "Next billing" : "Expires"} ${_fmtDate(s.premiumUntil!)}',
+                        style: AppText.caption.copyWith(
+                            color: AppColors.sText3, fontSize: 11)),
+                  ],
                 ],
               ),
             ),

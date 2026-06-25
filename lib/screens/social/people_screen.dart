@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -83,14 +84,12 @@ class _PeopleScreenState extends State<PeopleScreen>
 
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
-    final isPremium = AppState.instance.isPremium;
     try {
       final results = await Future.wait([
         Repos.friends.list().catchError((_) => <FriendData>[]),
         Repos.chat.conversations(take: 50).catchError((_) => <Chat>[]),
-        isPremium
-            ? Repos.social.whoViewedMe().catchError((_) => <SocialUserData>[])
-            : Future.value(<SocialUserData>[]),
+        // Loaded for everyone — free users see the list blurred behind a CTA.
+        Repos.social.whoViewedMe().catchError((_) => <SocialUserData>[]),
       ]);
       if (!mounted) return;
       setState(() {
@@ -219,26 +218,6 @@ class _PeopleScreenState extends State<PeopleScreen>
                 Row(
                   children: [
                     Text('People', style: AppText.displayMd),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: _openBlocked,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(children: [
-                          Icon(Icons.block_rounded,
-                              size: 15, color: AppColors.n200),
-                          const SizedBox(width: 6),
-                          Text('Blocked',
-                              style: AppText.caption
-                                  .copyWith(color: AppColors.n200)),
-                        ]),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -248,7 +227,7 @@ class _PeopleScreenState extends State<PeopleScreen>
                   badges: [
                     _acceptedFriends.length,
                     _requestCount,
-                    0,
+                    _views.length,
                   ],
                   premiumIndex: 2,
                 ),
@@ -267,10 +246,44 @@ class _PeopleScreenState extends State<PeopleScreen>
                     ],
                   ),
           ),
+          _blockedFooter(),
         ],
       ),
     );
   }
+
+  // Blocked-users access lives at the bottom of the screen (out of the way),
+  // not crowding the header.
+  Widget _blockedFooter() => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Insets.x5, 4, Insets.x5, 8),
+          child: GestureDetector(
+            onTap: _openBlocked,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.borderSubtle),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.block_rounded, size: 17, color: AppColors.n300),
+                  const SizedBox(width: 10),
+                  Text('Blocked users',
+                      style: AppText.label.copyWith(color: AppColors.n200)),
+                  const Spacer(),
+                  Icon(Icons.chevron_right,
+                      size: 18, color: AppColors.sText3),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 
   // ---- Friends tab ----
   Widget _friendsTab() {
@@ -343,16 +356,21 @@ class _PeopleScreenState extends State<PeopleScreen>
     );
   }
 
-  // ---- Viewed tab (premium) ----
+  // ---- Viewed tab ----
+  // Anyone who opens your profile card from the map lands here. Premium users
+  // see who + when; free users see the same list blurred behind an unlock CTA.
   Widget _viewedTab() {
-    if (!AppState.instance.isPremium) return _ViewedPremiumGate();
+    final premium = AppState.instance.isPremium;
     if (_views.isEmpty) {
       return _empty('👁', 'No profile views yet',
-          'When someone checks out your profile, they show up here.');
+          'When someone checks out your profile from the map, they show up here.');
     }
-    return RefreshIndicator(
+    final list = RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
+        physics: premium
+            ? const AlwaysScrollableScrollPhysics()
+            : const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(Insets.x5, 14, Insets.x5, 120),
         itemCount: _views.length,
         itemBuilder: (_, i) {
@@ -369,6 +387,21 @@ class _PeopleScreenState extends State<PeopleScreen>
           );
         },
       ),
+    );
+    if (premium) return list;
+    // Free: real list blurred, with an unlock overlay revealing the count.
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: list,
+            ),
+          ),
+        ),
+        Positioned.fill(child: _ViewedPremiumGate(count: _views.length)),
+      ],
     );
   }
 
@@ -747,9 +780,18 @@ class _RequestCard extends StatelessWidget {
 
 // ===========================================================================
 class _ViewedPremiumGate extends StatelessWidget {
+  final int count;
+  const _ViewedPremiumGate({this.count = 0});
+
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final headline = count > 0
+        ? '$count ${count == 1 ? 'person' : 'people'} viewed you'
+        : 'See who viewed you';
+    return Container(
+      // Subtle scrim so the blurred cards stay visible as a teaser behind it.
+      color: AppColors.sBg.withValues(alpha: 0.35),
+      alignment: Alignment.center,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Insets.x6),
         child: Column(
@@ -769,7 +811,7 @@ class _ViewedPremiumGate extends StatelessWidget {
               child: const Text('👑', style: TextStyle(fontSize: 52)),
             ),
             const SizedBox(height: 16),
-            Text('See who viewed you', style: AppText.h2),
+            Text(headline, style: AppText.h2, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
               'Unlock Premium to discover everyone who checked out your profile.',
