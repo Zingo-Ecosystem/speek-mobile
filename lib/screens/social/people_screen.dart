@@ -160,14 +160,30 @@ class _PeopleScreenState extends State<PeopleScreen>
   Future<void> _acceptFriend(FriendData f) async {
     try {
       await Repos.friends.addOrAccept(f.userId);
-      if (mounted) {
-        showSnack(context, '${f.name} is now your friend',
-            type: SnackType.success);
-      }
+      if (!mounted) return;
+      // Accepting now establishes a "We're connected" conversation on the
+      // backend — surface it in Chats and take the user straight into it
+      // (accept → chat), exactly like accepting a speak invite.
+      ChatListScreen.refresh?.call();
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ConversationScreen(
+          user: SpeekUser(
+            id: f.userId,
+            name: f.name,
+            age: 0,
+            flag: f.flag,
+            country: f.country,
+            city: '',
+            role: SpeakerRole.learner,
+            photoUrl: f.photoUrl,
+          ),
+        ),
+      ));
       await _load();
     } catch (_) {
       if (mounted) {
         showSnack(context, 'Could not accept.', type: SnackType.error);
+        await _load();
       }
     }
   }
