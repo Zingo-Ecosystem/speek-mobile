@@ -61,7 +61,12 @@ class _ShellScreenState extends State<ShellScreen> {
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: LiquidNavBar(
         index: _index,
-        onChanged: (i) => setState(() => _index = i),
+        onChanged: (i) {
+          setState(() => _index = i);
+          // Pull fresh requests/friends whenever the People tab is opened —
+          // the page stays alive in the IndexedStack so it won't reload itself.
+          if (i == ShellNav.people) PeopleScreen.refresh?.call();
+        },
       ),
     );
   }

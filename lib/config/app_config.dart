@@ -26,6 +26,12 @@ class AppConfig {
   /// resolve against the app's own origin (and fail) on web.
   static String media(String url) {
     if (url.isEmpty) return url;
+    // Re-host any uploaded media on the configured API base. The server may have
+    // stored an absolute URL with the wrong scheme/host (e.g. http://internal or
+    // a stale domain) which Android blocks as cleartext — always rebuild it from
+    // the `/uploads/...` segment so it points at the current https host.
+    final idx = url.indexOf('/uploads/');
+    if (idx >= 0) return '$apiBaseUrl${url.substring(idx)}';
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     return '$apiBaseUrl/${url.startsWith('/') ? url.substring(1) : url}';
   }

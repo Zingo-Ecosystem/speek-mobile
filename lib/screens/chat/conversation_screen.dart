@@ -73,7 +73,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
     RealtimeService.instance.registerPeer(widget.user.id, widget.user.name);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     _msgSub = RealtimeService.instance.onMessage.listen((m) {
-      if (mounted && !m.outgoing) {
+      // Incoming messages append live. Call-logs also arrive as "outgoing" for
+      // the caller (sent on their behalf) and aren't added optimistically, so
+      // let those through too — otherwise the caller wouldn't see the call entry.
+      if (mounted && (!m.outgoing || m.kind == MessageKind.callLog)) {
         setState(() => _messages = [..._messages, m]);
       }
     });
@@ -667,35 +670,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   Widget _bubble(Message m) {
     if (m.kind == MessageKind.callLog) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: AppColors.brand500.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: AppColors.brand500.withValues(alpha: 0.3)),
-            ),
-            child: Text.rich(
-              TextSpan(
-                style: AppText.caption
-                    .copyWith(fontSize: 12.5, color: AppColors.n100),
-                children: [
-                  const TextSpan(text: '📞 Missed voice call · '),
-                  TextSpan(
-                      text: 'Call back',
-                      style: AppText.caption.copyWith(
-                          color: AppColors.brand300,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
+      return _callLogBubble(m);
     }
 
     final canAct = m.id.isNotEmpty && m.outgoing;
@@ -714,6 +689,117 @@ class _ConversationScreenState extends State<ConversationScreen> {
         child: content,
       ),
     );
+  }
+
+  /// A Telegram-style call entry: direction icon + label + time/duration.
+  Widget _callLogBubble(Message m) {
+    final text = m.text;
+    final isVideo = text.contains('📹') || text.toLowerCase().contains('video');
+    final isMissed = text.contains('Missed') ||
+        text.contains('Declined') ||
+        text.contains('Cancelled');
+    final out = m.outgoing;
+
+    final title = isMissed
+        ? (out
+            ? (text.contains('Cancelled') ? 'Cancelled call' : 'Call ended')
+            : (text.contains('Declined') ? 'Declined call' : 'Missed call'))
+        : (out ? 'Outgoing call' : 'Incoming call');
+
+    final accent = isMissed ? AppColors.danger : AppColors.brand300;
+    final detail = StringBuffer(_clockLabel(m.time));
+    if (m.durationSeconds > 0) {
+      detail.write(', ${_durationWords(m.durationSeconds)}');
+    }
+
+    final content = Container(
+      constraints:
+          BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.7),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: out ? AppColors.grad : null,
+        color: out ? null : Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(out ? 18 : 6),
+          bottomRight: Radius.circular(out ? 6 : 18),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: out ? 0.18 : 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isVideo ? Icons.videocam_rounded : Icons.call_rounded,
+              size: 18,
+              color: out ? Colors.white : accent,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: AppText.label.copyWith(
+                      fontSize: 14,
+                      color: out ? Colors.white : AppColors.n100)),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    out ? Icons.north_east_rounded : Icons.south_west_rounded,
+                    size: 12,
+                    color: out
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : (isMissed ? accent : AppColors.n300),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(detail.toString(),
+                      style: AppText.caption.copyWith(
+                          fontSize: 11.5,
+                          color: out
+                              ? Colors.white.withValues(alpha: 0.75)
+                              : AppColors.n300)),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.5),
+      child: Align(
+        alignment: out ? Alignment.centerRight : Alignment.centerLeft,
+        child: content,
+      ),
+    );
+  }
+
+  static String _durationWords(int seconds) {
+    if (seconds < 60) return '$seconds second${seconds == 1 ? '' : 's'}';
+    final m = seconds ~/ 60, s = seconds % 60;
+    if (s == 0) return '$m minute${m == 1 ? '' : 's'}';
+    return '${m}m ${s}s';
+  }
+
+  static String _clockLabel(DateTime? t) {
+    if (t == null) return '';
+    final h24 = t.hour;
+    final ampm = h24 < 12 ? 'AM' : 'PM';
+    final h12 = h24 % 12 == 0 ? 12 : h24 % 12;
+    return '$h12:${t.minute.toString().padLeft(2, '0')} $ampm';
   }
 
   static String _timeLabel(DateTime? t) {

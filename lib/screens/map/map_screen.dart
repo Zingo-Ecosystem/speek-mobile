@@ -553,11 +553,14 @@ class _UserMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ringColor = user.inCall
+    // Friends stand out in green ("yes, this is my friend") regardless of state.
+    final ringColor = user.isFriend
         ? AppColors.success
-        : user.online
-            ? AppColors.brand500
-            : Colors.white.withValues(alpha: 0.4);
+        : user.inCall
+            ? AppColors.success
+            : user.online
+                ? AppColors.brand500
+                : Colors.white.withValues(alpha: 0.4);
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -571,10 +574,14 @@ class _UserMarker extends StatelessWidget {
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.n800,
-                  border: Border.all(color: ringColor, width: 2),
+                  // Green-tinted backdrop for friends so they read as "my people".
+                  color: user.isFriend
+                      ? AppColors.success.withValues(alpha: 0.22)
+                      : AppColors.n800,
+                  border: Border.all(
+                      color: ringColor, width: user.isFriend ? 2.5 : 2),
                   boxShadow: [
-                    if (user.online)
+                    if (user.online || user.isFriend)
                       BoxShadow(
                           color: ringColor.withValues(alpha: 0.5),
                           blurRadius: 12),
@@ -609,6 +616,24 @@ class _UserMarker extends StatelessWidget {
                       border: Border.all(color: AppColors.n900, width: 2),
                     ),
                     child: const Icon(Icons.call, size: 9, color: Colors.white),
+                  ),
+                )
+              // Friend check-badge (skip when the call badge already occupies the
+              // corner) so friends are instantly recognizable on the map.
+              else if (user.isFriend)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.n900, width: 2),
+                    ),
+                    child: const Icon(Icons.check_rounded,
+                        size: 11, color: Colors.white),
                   ),
                 ),
             ],

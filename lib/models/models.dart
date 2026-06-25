@@ -31,6 +31,7 @@ class SpeekUser {
   final DateTime? callStartedAt;
   final String email; // only populated for the signed-in user (/Profile/me)
   final int callPolicy; // 0 Everyone, 1 Friends only, 2 No one
+  final bool isFriend; // already an accepted friend (drives map highlight)
 
   /// Set when an *accepted* conversation already exists with this user — i.e.
   /// you're connected and may chat/call. Null means you must invite first.
@@ -60,6 +61,7 @@ class SpeekUser {
     this.conversationId,
     this.email = '',
     this.callPolicy = 0,
+    this.isFriend = false,
   });
 
   /// True when an accepted conversation exists — chatting/calling is allowed.
@@ -111,6 +113,7 @@ class SpeekUser {
           j['conversationId'] == null ? null : '${j['conversationId']}',
       email: s('email'),
       callPolicy: i('callPolicy'),
+      isFriend: j['isFriend'] == true,
     );
   }
 }
@@ -118,11 +121,7 @@ class SpeekUser {
 enum MessageKind { text, voice, callLog, image, document, invite }
 
 /// Relative URL → absolute using AppConfig.apiBaseUrl.
-String _normalizeMediaUrl(String url) {
-  if (url.isEmpty || url.startsWith('http')) return url;
-  final base = AppConfig.apiBaseUrl;
-  return '$base${url.startsWith('/') ? '' : '/'}$url';
-}
+String _normalizeMediaUrl(String url) => AppConfig.media(url);
 
 @immutable
 class Message {
@@ -131,6 +130,7 @@ class Message {
   final bool outgoing;
   final MessageKind kind;
   final String voiceDuration; // for voice notes
+  final int durationSeconds; // raw seconds (voice notes + call logs)
   final String mediaUrl;
   final String documentName; // for document/file messages
   final DateTime? time;
@@ -141,6 +141,7 @@ class Message {
     this.outgoing = false,
     this.kind = MessageKind.text,
     this.voiceDuration = '',
+    this.durationSeconds = 0,
     this.mediaUrl = '',
     this.documentName = '',
     this.time,
@@ -152,6 +153,7 @@ class Message {
         outgoing: outgoing,
         kind: kind,
         voiceDuration: voiceDuration,
+        durationSeconds: durationSeconds,
         mediaUrl: mediaUrl,
         documentName: documentName,
         time: time,
@@ -171,6 +173,7 @@ class Message {
       outgoing: j['outgoing'] == true,
       kind: ApiEnums.messageKind(j['kind']),
       voiceDuration: dur,
+      durationSeconds: secs,
       mediaUrl: _normalizeMediaUrl((j['mediaUrl'] ?? '').toString()),
       documentName: (j['documentName'] ?? '').toString(),
       time: DateTime.tryParse('${j['createdAtUtc']}')?.toLocal(),

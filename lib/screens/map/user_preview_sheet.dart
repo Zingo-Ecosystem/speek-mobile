@@ -385,15 +385,40 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
                         ],
                       ),
                       const SizedBox(height: 18),
-                      // Add friend button
-                      GhostButton(
-                        _friendSent
-                            ? '✓ Friend request sent'
-                            : _friendLoading
-                                ? 'Sending...'
-                                : '👤 Add friend',
-                        onTap: (_friendSent || _friendLoading) ? null : _addFriend,
-                      ),
+                      // Add-friend only makes sense when they're not already a
+                      // friend. For existing friends show a green "Friends" badge.
+                      if (user.isFriend)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(Radii.lg),
+                            border: Border.all(
+                                color: AppColors.success.withValues(alpha: 0.45)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.verified_rounded,
+                                  size: 18, color: AppColors.success),
+                              const SizedBox(width: 8),
+                              Text('Friends',
+                                  style: AppText.label
+                                      .copyWith(color: AppColors.success)),
+                            ],
+                          ),
+                        )
+                      else
+                        GhostButton(
+                          _friendSent
+                              ? '✓ Friend request sent'
+                              : _friendLoading
+                                  ? 'Sending...'
+                                  : '👤 Add friend',
+                          onTap:
+                              (_friendSent || _friendLoading) ? null : _addFriend,
+                        ),
                       const SizedBox(height: 10),
                       if (user.isConnected) ...[
                         // Already connected → can chat & call.

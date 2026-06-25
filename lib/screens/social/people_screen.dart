@@ -23,12 +23,16 @@ class PeopleScreen extends StatefulWidget {
 
   @override
   State<PeopleScreen> createState() => _PeopleScreenState();
+
+  /// Set by the live screen so the shell can refresh it when its tab is opened.
+  static void Function()? refresh;
 }
 
 class _PeopleScreenState extends State<PeopleScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabs;
   StreamSubscription? _inviteSub;
+  StreamSubscription? _msgSub;
 
   List<FriendData> _friends = const [];
   List<Chat> _invites = const [];
@@ -38,16 +42,35 @@ class _PeopleScreenState extends State<PeopleScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    PeopleScreen.refresh = () { if (mounted) _load(); };
     _tabs = TabController(length: 3, vsync: this);
     _load();
     // Incoming invites now surface here.
     _inviteSub = RealtimeService.instance.onInvite.listen((_) => _load());
+    // A new request can also arrive as a plain message event (e.g. when the
+    // invite push is delivered as a message); refresh on those too.
+    _msgSub = RealtimeService.instance.onMessage.listen((_) => _load());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the foreground: make sure the realtime link is up and pull
+    // any requests that landed while we were backgrounded, so they appear
+    // without needing a full app restart.
+    if (state == AppLifecycleState.resumed) {
+      RealtimeService.instance.connect();
+      _load();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PeopleScreen.refresh = null;
     _tabs.dispose();
     _inviteSub?.cancel();
+    _msgSub?.cancel();
     super.dispose();
   }
 
@@ -891,29 +914,70 @@ class BlockedUsersScreenState extends State<BlockedUsersScreen> {
                   itemCount: _blocked.length,
                   itemBuilder: (_, i) {
                     final b = _blocked[i];
+                    final sub = b.at != null
+                        ? 'Blocked ${_PeopleScreenState._ago(b.at!)}'
+                        : '${b.flag} ${b.country}'.trim();
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
+                      margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppColors.sFill(0.06),
+                        color: AppColors.sFill(0.05),
                         borderRadius: BorderRadius.circular(Radii.lg),
+                        border:
+                            Border.all(color: AppColors.danger.withValues(alpha: 0.22)),
                       ),
                       child: Row(
                         children: [
-                          Avatar(b.photoUrl, size: 46, name: b.name),
-                          const SizedBox(width: 12),
+                          // Greyed avatar with a small block badge so the state reads instantly.
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              ColorFiltered(
+                                colorFilter: const ColorFilter.matrix(<double>[
+                                  0.2126, 0.7152, 0.0722, 0, 0,
+                                  0.2126, 0.7152, 0.0722, 0, 0,
+                                  0.2126, 0.7152, 0.0722, 0, 0,
+                                  0, 0, 0, 1, 0,
+                                ]),
+                                child: Avatar(b.photoUrl, size: 48, name: b.name),
+                              ),
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.danger,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: AppColors.sBg, width: 2),
+                                  ),
+                                  child: const Icon(Icons.block_rounded,
+                                      size: 11, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(b.name, style: AppText.label),
-                                const SizedBox(height: 2),
-                                Text('${b.flag} ${b.country}',
+                                Text(b.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.label),
+                                const SizedBox(height: 3),
+                                Text(sub.isEmpty ? 'Blocked' : sub,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: AppText.caption
                                         .copyWith(color: AppColors.sText2)),
                               ],
                             ),
                           ),
+                          const SizedBox(width: 8),
                           GhostButton('Unblock',
                               small: true, onTap: () => _unblock(b)),
                         ],
