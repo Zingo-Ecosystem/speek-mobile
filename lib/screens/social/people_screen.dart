@@ -12,6 +12,7 @@ import '../../theme/app_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/snack.dart';
+import '../chat/chat_list_screen.dart';
 import '../chat/conversation_screen.dart';
 import '../subscription/paywall_screen.dart';
 
@@ -123,6 +124,8 @@ class _PeopleScreenState extends State<PeopleScreen>
   }
 
   Future<void> _acceptInvite(Chat c) async {
+    // Optimistically drop it from the Requests list so the UI feels instant.
+    setState(() => _invites = _invites.where((x) => x.id != c.id).toList());
     try {
       await Repos.chat.accept(c.id);
       // Becoming friends too keeps the relationship in one place.
@@ -130,12 +133,20 @@ class _PeopleScreenState extends State<PeopleScreen>
         await Repos.friends.addOrAccept(c.user.id);
       } catch (_) {}
       if (!mounted) return;
-      showSnack(context, '🎉 Connected with ${c.user.name}!',
-          type: SnackType.success);
+      // The conversation is now accepted — make sure it shows in Chats and take
+      // the user straight into it (accept → chat, as expected).
+      ChatListScreen.refresh?.call();
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ConversationScreen(
+          user: c.user,
+          conversationId: c.id,
+        ),
+      ));
       await _load();
     } catch (_) {
       if (mounted) {
         showSnack(context, 'Could not accept.', type: SnackType.error);
+        await _load(); // restore the request if the accept failed
       }
     }
   }

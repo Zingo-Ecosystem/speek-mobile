@@ -17,9 +17,13 @@ class ChatListScreen extends StatefulWidget {
 
   @override
   State<ChatListScreen> createState() => _ChatListScreenState();
+
+  /// Set by the live screen so the shell can refresh it when its tab is opened.
+  static void Function()? refresh;
 }
 
-class _ChatListScreenState extends State<ChatListScreen> {
+class _ChatListScreenState extends State<ChatListScreen>
+    with WidgetsBindingObserver {
   List<Chat> _all = const [];
   bool _loaded = false;
   StreamSubscription? _msgSub;
@@ -28,14 +32,27 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ChatListScreen.refresh = () { if (mounted) _load(); };
     _load();
-    // Refresh the list whenever a realtime message or invite arrives.
+    // Refresh the list whenever a realtime message, invite or read-receipt
+    // arrives (a newly accepted conversation shows up as a message event).
     _msgSub = RealtimeService.instance.onMessage.listen((_) => _load());
     _inviteSub = RealtimeService.instance.onInvite.listen((_) => _load());
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      RealtimeService.instance.connect();
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ChatListScreen.refresh = null;
     _msgSub?.cancel();
     _inviteSub?.cancel();
     super.dispose();

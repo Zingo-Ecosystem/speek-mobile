@@ -63,9 +63,10 @@ class _ShellScreenState extends State<ShellScreen> {
         index: _index,
         onChanged: (i) {
           setState(() => _index = i);
-          // Pull fresh requests/friends whenever the People tab is opened —
-          // the page stays alive in the IndexedStack so it won't reload itself.
+          // Pages stay alive in the IndexedStack, so refresh the data-driven
+          // tabs whenever they're opened rather than relying on init-only loads.
           if (i == ShellNav.people) PeopleScreen.refresh?.call();
+          if (i == ShellNav.chats) ChatListScreen.refresh?.call();
         },
       ),
     );

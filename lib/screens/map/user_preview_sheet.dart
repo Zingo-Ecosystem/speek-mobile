@@ -133,8 +133,10 @@ class _UserPreviewSheetState extends State<_UserPreviewSheet> {
     final nav = Navigator.of(context);
     if (!_gate(context)) return;
     nav.pop();
+    // Place the voice call straight away — no extra "choose type" step.
     nav.push(MaterialPageRoute(
-        builder: (_) => IncomingCallScreen(user: widget.user)));
+        builder: (_) =>
+            IncomingCallScreen(user: widget.user, autoStartVideo: false)));
   }
 
   void _message(BuildContext context) {

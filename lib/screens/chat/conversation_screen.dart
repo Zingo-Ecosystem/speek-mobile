@@ -19,6 +19,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text.dart';
 import '../../widgets/common.dart';
 import '../call/incoming_call_screen.dart';
+import '../profile/user_profile_screen.dart';
 
 class ConversationScreen extends StatefulWidget {
   final SpeekUser user;
@@ -1114,41 +1115,69 @@ class _Header extends StatelessWidget {
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          Avatar(user.photoUrl, size: 40, name: user.name),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          GestureDetector(
+            onTap: () => _openProfile(context),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
               children: [
-                Text('${user.name} ${user.flag}', style: AppText.label),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Text(
-                    isTyping
-                        ? 'typing...'
-                        : (user.online ? '● Online now' : 'Offline'),
-                    key: ValueKey(isTyping),
-                    style: AppText.caption.copyWith(
-                      color: isTyping
-                          ? AppColors.brand300
-                          : (user.online ? AppColors.success : AppColors.n300),
-                      fontSize: 11,
-                    ),
-                  ),
+                Hero(
+                  tag: 'avatar_${user.id}',
+                  child: Avatar(user.photoUrl, size: 40, name: user.name),
                 ),
+                const SizedBox(width: 10),
               ],
             ),
           ),
-          _circle(Icons.videocam_rounded, null, () => _call(context),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _openProfile(context),
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${user.name} ${user.flag}', style: AppText.label),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Text(
+                      isTyping
+                          ? 'typing...'
+                          : (user.online ? '● Online now' : 'Offline'),
+                      key: ValueKey(isTyping),
+                      style: AppText.caption.copyWith(
+                        color: isTyping
+                            ? AppColors.brand300
+                            : (user.online
+                                ? AppColors.success
+                                : AppColors.n300),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Voice + video both place the call immediately.
+          _circle(Icons.call_rounded, null, () => _call(context, video: false)),
+          const SizedBox(width: 8),
+          _circle(Icons.videocam_rounded, null, () => _call(context, video: true),
               gradient: true),
         ],
       ),
     );
   }
 
-  void _call(BuildContext context) => Navigator.of(context).push(
+  void _openProfile(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => UserProfileScreen(user: user, cameFromChat: true),
+        ),
+      );
+
+  void _call(BuildContext context, {required bool video}) =>
+      Navigator.of(context).push(
         PageRouteBuilder<void>(
-          pageBuilder: (_, _, _) => IncomingCallScreen(user: user),
+          pageBuilder: (_, _, _) =>
+              IncomingCallScreen(user: user, autoStartVideo: video),
           transitionDuration: const Duration(milliseconds: 380),
           reverseTransitionDuration: const Duration(milliseconds: 280),
           transitionsBuilder: (_, animation, _, child) {

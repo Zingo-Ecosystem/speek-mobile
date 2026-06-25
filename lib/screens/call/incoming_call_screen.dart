@@ -21,7 +21,13 @@ import 'voice_call_screen.dart';
 /// Callee accept qilgach → VoiceCallScreen/VideoCallScreen.
 class IncomingCallScreen extends StatefulWidget {
   final SpeekUser user;
-  const IncomingCallScreen({super.key, required this.user});
+
+  /// When non-null the call starts immediately with this medium (true = video,
+  /// false = voice) instead of showing the "Choose call type" step. This is what
+  /// makes tapping Voice/Video on a profile place the call automatically.
+  final bool? autoStartVideo;
+
+  const IncomingCallScreen({super.key, required this.user, this.autoStartVideo});
 
   @override
   State<IncomingCallScreen> createState() => _IncomingCallScreenState();
@@ -35,6 +41,18 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
   StreamSubscription? _stateSub;
   EventsListener<RoomEvent>? _roomListener;
   Timer? _noAnswerTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    final auto = widget.autoStartVideo;
+    if (auto != null) {
+      // Place the call as soon as the screen is on-screen.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startCall(video: auto);
+      });
+    }
+  }
 
   @override
   void dispose() {
